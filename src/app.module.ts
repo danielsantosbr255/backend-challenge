@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { HealthModule } from './health/health.module';
+import { HealthModule } from './modules/health/health.module';
 import { validateEnv } from './infrastructure/config/env.schema';
 import { PersistenceModule } from './infrastructure/persistence/persistence.module';
 
@@ -15,4 +15,4 @@ import { PersistenceModule } from './infrastructure/persistence/persistence.modu
     HealthModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

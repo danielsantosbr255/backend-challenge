@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { EntityManager } from '@mikro-orm/postgresql';
+import { EntityManager } from '@mikro-orm/core';
 import { Module, type INestApplicationContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { HealthService } from '@/health/health.service';
+import { HealthService } from '@/modules/health/health.service';
 import { SQS_CLIENT } from '@/infrastructure/messaging/sqs-client.provider';
 
 const testApplications: INestApplicationContext[] = [];
@@ -72,7 +72,7 @@ async function createHealthService(
       },
     ],
   })
-  class TestHealthModule {}
+  class TestHealthModule { }
 
   const application = await NestFactory.createApplicationContext(
     TestHealthModule,

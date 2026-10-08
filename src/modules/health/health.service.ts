@@ -3,7 +3,7 @@ import {
   QueueAttributeName,
   SQSClient,
 } from '@aws-sdk/client-sqs';
-import { EntityManager } from '@mikro-orm/postgresql';
+import { EntityManager } from '@mikro-orm/core';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SQS_CLIENT } from '@/infrastructure/messaging/sqs-client.provider';
@@ -68,12 +68,8 @@ export class HealthService {
   }
 
   private async checkSqs(): Promise<void> {
-    const queueUrl = this.configService.get<string>('SQS_QUEUE_URL');
-    const deadLetterQueueUrl = this.configService.get<string>('SQS_DLQ_URL');
-
-    if (!queueUrl || !deadLetterQueueUrl) {
-      throw new Error('Required SQS queue URL is not configured');
-    }
+    const queueUrl = this.configService.getOrThrow<string>('SQS_QUEUE_URL');
+    const deadLetterQueueUrl = this.configService.getOrThrow<string>('SQS_DLQ_URL');
 
     await Promise.all(
       [queueUrl, deadLetterQueueUrl].map((url) =>

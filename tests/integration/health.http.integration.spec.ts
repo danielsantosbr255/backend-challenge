@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { EntityManager } from '@mikro-orm/postgresql';
+import { EntityManager } from '@mikro-orm/core';
 import { Module, type INestApplication, type Type } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { HealthController } from '@/health/health.controller';
-import { HealthService } from '@/health/health.service';
+import { HealthController } from '@/modules/health/health.controller';
+import { HealthService } from '@/modules/health/health.service';
 import { SQS_CLIENT } from '@/infrastructure/messaging/sqs-client.provider';
 
 const availableDatabaseCheck = async (): Promise<void> => undefined;
 const unavailableDatabaseCheck = async (): Promise<void> => {
-    throw new Error('private connection details');
+  throw new Error('private connection details');
 };
 
 const testApplications: INestApplication[] = [];
@@ -82,7 +82,7 @@ function createTestHealthModule(checkDatabase: () => Promise<void>): Type<unknow
       },
     ],
   })
-  class TestHealthModule {}
+  class TestHealthModule { }
 
   return TestHealthModule;
 }
