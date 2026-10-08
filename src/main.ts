@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -17,7 +18,7 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
-  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const port = app.get(ConfigService).getOrThrow<number>('PORT');
   await app.listen(port);
 
   logger.log(`Application is running on port ${port} (PID: ${process.pid})`);

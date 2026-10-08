@@ -1,24 +1,31 @@
 import { z } from 'zod';
 
 export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().default(3000),
+  NODE_ENV: z.enum(['development', 'test', 'production']),
+  PORT: z.coerce.number(),
 
   // Database (PostgreSQL)
-  DATABASE_HOST: z.string().min(1).default('localhost'),
-  DATABASE_PORT: z.coerce.number().default(5432),
-  DATABASE_USER: z.string().min(1).default('postgres'),
-  DATABASE_PASSWORD: z.string().min(1).default('postgres'),
-  DATABASE_NAME: z.string().min(1).default('wagering_db'),
+  DATABASE_HOST: z.string().min(1),
+  DATABASE_PORT: z.coerce.number(),
+  DATABASE_USER: z.string().min(1),
+  DATABASE_PASSWORD: z.string().min(1),
+  DATABASE_NAME: z.string().min(1),
 
   // AWS / LocalStack SQS
-  AWS_REGION: z.string().min(1).default('us-east-1'),
-  AWS_ENDPOINT: z.url().default('http://localhost:4566'),
-  AWS_ACCESS_KEY_ID: z.string().min(1).default('test'),
-  AWS_SECRET_ACCESS_KEY: z.string().min(1).default('test'),
-  SQS_QUEUE_URL: z.url().default('http://localhost:4566/000000000000/wager-transactions.fifo'),
-  SQS_DLQ_URL: z.url().default('http://localhost:4566/000000000000/wager-transactions-dlq.fifo'),
-});
+  AWS_REGION: z.string().min(1),
+  AWS_ENDPOINT: z.url().optional(),
+  AWS_ACCESS_KEY_ID: z.string().min(1).optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  SQS_QUEUE_URL: z.url(),
+  SQS_DLQ_URL: z.url(),
+}).refine(
+  ({ AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY }) =>
+    (AWS_ACCESS_KEY_ID === undefined) === (AWS_SECRET_ACCESS_KEY === undefined),
+  {
+    message: 'Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY together',
+    path: ['AWS_ACCESS_KEY_ID'],
+  },
+);
 
 export type EnvConfig = z.infer<typeof envSchema>;
 
