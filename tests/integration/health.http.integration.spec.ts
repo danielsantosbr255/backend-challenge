@@ -53,17 +53,46 @@ describe('Health HTTP routes', () => {
     expect(body['errors']).toEqual({ database: 'unavailable' });
     expect(JSON.stringify(body)).not.toContain('private connection details');
   });
+
+  it('returns 503 and a sanitized body when SQS is unavailable', async () => {
+    const baseUrl = await startHealthServer(
+      availableDatabaseCheck,
+      async () => {
+        throw new Error('private SQS endpoint details');
+      },
+    );
+
+    const response = await fetch(`${baseUrl}/health/ready`);
+    const body: unknown = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(isJsonObject(body)).toBe(true);
+
+    if (!isJsonObject(body)) {
+      throw new Error('Readiness response was not a JSON object');
+    }
+
+    expect(body['status']).toBe('error');
+    expect(body['errors']).toEqual({ sqs: 'unavailable' });
+    expect(JSON.stringify(body)).not.toContain('private SQS endpoint details');
+  });
 });
 
-async function startHealthServer(checkDatabase: () => Promise<void>): Promise<string> {
-  const healthModule = createTestHealthModule(checkDatabase);
+async function startHealthServer(
+  checkDatabase: () => Promise<void>,
+  sendSqsCommand: () => Promise<void> = async () => undefined,
+): Promise<string> {
+  const healthModule = createTestHealthModule(checkDatabase, sendSqsCommand);
   const application = await NestFactory.create(healthModule, { logger: false });
   await application.listen(0, '127.0.0.1');
   testApplications.push(application);
   return application.getUrl();
 }
 
-function createTestHealthModule(checkDatabase: () => Promise<void>): Type<unknown> {
+function createTestHealthModule(
+  checkDatabase: () => Promise<void>,
+  sendSqsCommand: () => Promise<void>,
+): Type<unknown> {
   @Module({
     controllers: [HealthController],
     providers: [
@@ -72,7 +101,7 @@ function createTestHealthModule(checkDatabase: () => Promise<void>): Type<unknow
         provide: EntityManager,
         useValue: { getConnection: () => ({ execute: checkDatabase }) },
       },
-      { provide: SQS_CLIENT, useValue: { send: async () => undefined } },
+      { provide: SQS_CLIENT, useValue: { send: sendSqsCommand } },
       {
         provide: ConfigService,
         useValue: new ConfigService({
