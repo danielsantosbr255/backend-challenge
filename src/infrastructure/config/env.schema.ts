@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
+const tcpPortSchema = z.coerce.number().int().min(1).max(65535);
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']),
-  PORT: z.coerce.number(),
+  PORT: tcpPortSchema,
 
   // Database (PostgreSQL)
   DATABASE_HOST: z.string().min(1),
-  DATABASE_PORT: z.coerce.number(),
+  DATABASE_PORT: tcpPortSchema,
   DATABASE_USER: z.string().min(1),
   DATABASE_PASSWORD: z.string().min(1),
   DATABASE_NAME: z.string().min(1),
