@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const tcpPortSchema = z.coerce.number().int().min(1).max(65535);
 
-export const envSchema = z.object({
+const baseEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']),
   PORT: tcpPortSchema,
 
@@ -20,7 +20,18 @@ export const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   SQS_QUEUE_URL: z.url(),
   SQS_DLQ_URL: z.url(),
-}).refine(
+});
+
+export const databaseEnvSchema = baseEnvSchema.pick({
+  NODE_ENV: true,
+  DATABASE_HOST: true,
+  DATABASE_PORT: true,
+  DATABASE_USER: true,
+  DATABASE_PASSWORD: true,
+  DATABASE_NAME: true,
+});
+
+export const envSchema = baseEnvSchema.refine(
   ({ AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY }) =>
     (AWS_ACCESS_KEY_ID === undefined) === (AWS_SECRET_ACCESS_KEY === undefined),
   {
