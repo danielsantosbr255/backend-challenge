@@ -169,6 +169,8 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
       [wagerMessageId, walletId, walletId],
     );
     expect(persisted[0]).toEqual({ balance: '90.00', inbox_count: 1, outbox_count: 2 });
+    const reconciliation = await fetch(`${baseUrl}/wallets/${walletId}/reconciliation`, { method: 'POST' });
+    expect(await reconciliation.json()).toMatchObject({ consistent: true, calculatedBalance: { amount: '90.00' } });
 
     const event = await receiveExpectedEvent(externalTransactionId);
     expect(event).toMatchObject({
@@ -296,6 +298,8 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
 
     const rows = await waitForPublishedOutbox(eventId);
     expect(rows[0]).toEqual({ attempts: 1, published: true });
+    const reconciliation = await fetch(`${await app.getUrl()}/wallets/${walletId}/reconciliation`, { method: 'POST' });
+    expect(await reconciliation.json()).toMatchObject({ consistent: true, calculatedBalance: { amount: '0.00' } });
   }, 45_000);
 });
 

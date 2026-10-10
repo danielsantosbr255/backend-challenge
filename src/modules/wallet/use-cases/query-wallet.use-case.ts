@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { MetricsService } from '@/common/observability/metrics.service';
-import { Money } from '../domain/money';
 import { WALLET_REPOSITORY, type WalletRepositoryInterface } from '../wallet.interface';
 import { WalletNotFoundError } from '../wallet.errors';
 import type { WalletLedgerResponseDto, WalletReconciliationResponseDto, WalletResponseDto } from '../dtos/wallet-query-response.dto';
@@ -40,12 +39,11 @@ export class QueryWalletUseCase {
   async reconcile(walletId: string): Promise<WalletReconciliationResponseDto> {
     const result = await this.repository.reconcile(walletId);
     if (result === undefined) throw new WalletNotFoundError();
-    const difference = Money.from(result.storedBalance).subtract(Money.from(result.calculatedBalance));
-    const consistent = difference.isZero();
+    const consistent = result.difference.amount === '0.00';
     if (!consistent) {
       this.metrics.recordReconciliationDivergence();
       this.logger.error(JSON.stringify({ event: 'wallet_reconciliation_divergence', walletId }));
     }
-    return { ...result, difference: difference.toJSON(), consistent };
+    return { ...result, consistent };
   }
 }

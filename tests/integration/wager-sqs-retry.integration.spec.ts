@@ -194,7 +194,7 @@ describe('SQS transient retry (PostgreSQL and LocalStack)', () => {
       );
       expect(rows[0]).toEqual({ wagers: 0, inbox: 0 });
     });
-    const reconciliation = await fetch(`${baseUrl}/wallets/${walletId}/reconciliation`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ walletId }) });
+    const reconciliation = await fetch(`${baseUrl}/wallets/${walletId}/reconciliation`, { method: 'POST' });
     expect(await reconciliation.json()).toMatchObject({ consistent: true, storedBalance: { amount: '100.00' } });
   }, 40_000);
 });

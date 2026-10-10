@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@/modules/wallet/domain/money';
-import { WalletLedgerEntry } from '@/modules/wallet/domain/wallet-ledger-entry';
+import { WalletLedgerEntry, type CreateWalletLedgerEntryProps } from '@/modules/wallet/domain/wallet-ledger-entry';
 
 describe('WalletLedgerEntry', () => {
   it('creates a balanced credit entry', () => {
@@ -17,5 +17,19 @@ describe('WalletLedgerEntry', () => {
 
     expect(entry.isBalanced()).toBe(true);
     expect(entry.balanceAfter.toJSON()).toEqual({ amount: '25.50', currency: 'BRL' });
+  });
+
+  it('rejects inconsistent arithmetic, negative balances, zero movements and currency mismatches', () => {
+    const base: CreateWalletLedgerEntryProps = {
+      id: crypto.randomUUID(), walletId: crypto.randomUUID(), transactionId: crypto.randomUUID(), direction: 'DEBIT',
+      amount: Money.from({ amount: '5.00', currency: 'BRL' }),
+      balanceBefore: Money.from({ amount: '10.00', currency: 'BRL' }),
+      balanceAfter: Money.from({ amount: '5.00', currency: 'BRL' }), createdAt: new Date(),
+    };
+    expect(WalletLedgerEntry.create(base).isBalanced()).toBe(true);
+    expect(() => WalletLedgerEntry.create({ ...base, balanceAfter: Money.zero('BRL') })).toThrow();
+    expect(() => WalletLedgerEntry.create({ ...base, amount: Money.zero('BRL') })).toThrow();
+    expect(() => WalletLedgerEntry.create({ ...base, balanceAfter: Money.from({ amount: '5.00', currency: 'USD' }) })).toThrow();
+    expect(() => WalletLedgerEntry.create({ ...base, balanceAfter: Money.zero('BRL').subtract(base.amount) })).toThrow();
   });
 });

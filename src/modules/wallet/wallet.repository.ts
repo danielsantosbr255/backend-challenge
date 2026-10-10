@@ -17,7 +17,6 @@ import { toLedgerEntryEntityData, toWalletDomain, toWalletEntityData } from './w
 import { toOutboxEntityData, toWagerEntityData } from '@/modules/wager/wager.mappers';
 import { createWagerEvents } from '@/modules/wager/wager.events';
 import { OutboxMessageEntity } from '@/modules/wager/entities/outbox-message.entity';
-import { Money } from './domain/money';
 import { rethrowPersistenceError } from '@/infrastructure/persistence/persistence-error';
 
 @Injectable()
@@ -89,13 +88,13 @@ export class WalletRepository implements WalletRepositoryInterface {
       wallet_id: string;
       currency: string;
       stored_balance: string;
-      credits: string | null;
-      debits: string | null;
+      calculated_balance: string;
+      difference: string;
       checked_entries: number;
     }>>(
       `SELECT w.id AS wallet_id, w.currency, w.balance::text AS stored_balance,
-              COALESCE(SUM(e.amount) FILTER (WHERE e.direction = 'CREDIT'), 0)::text AS credits,
-              COALESCE(SUM(e.amount) FILTER (WHERE e.direction = 'DEBIT'), 0)::text AS debits,
+              ROUND(COALESCE(SUM(CASE WHEN e.direction = 'CREDIT' THEN e.amount ELSE -e.amount END), 0), 2)::text AS calculated_balance,
+              ROUND(w.balance - COALESCE(SUM(CASE WHEN e.direction = 'CREDIT' THEN e.amount ELSE -e.amount END), 0), 2)::text AS difference,
               COUNT(e.id)::int AS checked_entries
        FROM wallets w LEFT JOIN wallet_ledger_entries e ON e.wallet_id = w.id
        WHERE w.id = ? GROUP BY w.id`,
@@ -103,12 +102,11 @@ export class WalletRepository implements WalletRepositoryInterface {
     ).catch(rethrowPersistenceError);
     const row = rows[0];
     if (row === undefined) return undefined;
-    const calculated = Money.from({ amount: row.credits ?? '0.00', currency: row.currency })
-      .subtract(Money.from({ amount: row.debits ?? '0.00', currency: row.currency }));
     return {
       walletId: row.wallet_id,
       storedBalance: { amount: row.stored_balance, currency: row.currency },
-      calculatedBalance: calculated.toJSON(),
+      calculatedBalance: { amount: row.calculated_balance, currency: row.currency },
+      difference: { amount: row.difference, currency: row.currency },
       checkedEntries: row.checked_entries,
     };
   }

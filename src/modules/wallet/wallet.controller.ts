@@ -23,7 +23,6 @@ import type {
   WalletReconciliationResponseDto,
   WalletResponseDto,
 } from './dtos/wallet-query-response.dto';
-import { ReconcileWalletRequestDto } from './dtos/reconcile-wallet.dto';
 
 // Apply the external provider identity guard here if authentication is added.
 @Controller('wallets')
@@ -52,9 +51,7 @@ export class WalletController {
   @HttpCode(HttpStatus.OK)
   async reconcile(
     @Param('walletId', ParseUUIDPipe) walletId: string,
-    @Body() request: ReconcileWalletRequestDto,
   ): Promise<WalletReconciliationResponseDto> {
-    if (request.walletId !== walletId) throw new BadRequestException('walletId must match the route parameter');
     return this.queryWallet.reconcile(walletId);
   }
 

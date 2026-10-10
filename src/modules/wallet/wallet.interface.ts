@@ -23,5 +23,6 @@ export interface WalletReconciliation {
   walletId: string;
   storedBalance: { amount: string; currency: string };
   calculatedBalance: { amount: string; currency: string };
+  difference: { amount: string; currency: string };
   checkedEntries: number;
 }

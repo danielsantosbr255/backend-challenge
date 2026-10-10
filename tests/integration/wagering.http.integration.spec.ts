@@ -268,20 +268,34 @@ describe('Wagering HTTP processing', () => {
     });
   });
 
+  it('reconciles without a body when accumulated credits exceed an individual monetary amount', async () => {
+    const walletId = await createWallet('9999999999999999.99');
+    expect((await submit(wagerRequest(walletId, 'large-turnover-bet', '1.00'))).status).toBe(200);
+    expect((await submit(wagerRequest(walletId, 'large-turnover-win', '1.00', 'WIN'))).status).toBe(200);
+    const response = await fetch(`${testBaseUrl}/wallets/${walletId}/reconciliation`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      consistent: true, calculatedBalance: { amount: '9999999999999999.99', currency: 'BRL' },
+      difference: { amount: '0.00', currency: 'BRL' }, checkedEntries: 3,
+    });
+  });
+
   it('signals reconciliation divergence without repairing the stored balance', async () => {
     const walletId = await createWallet('100.00');
     await testOrm.em.getConnection().execute('UPDATE wallets SET balance = ? WHERE id = ?', ['99.00', walletId]);
-    const response = await fetch(`${testBaseUrl}/wallets/${walletId}/reconciliation`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ walletId }),
-    });
-    const body: unknown = await response.json();
-    expect(response.status).toBe(200);
-    expect(isJsonObject(body) ? body['consistent'] : undefined).toBe(false);
-    expect(isJsonObject(body) ? body['difference'] : undefined).toEqual({ amount: '-1.00', currency: 'BRL' });
-    expect(await readBalance(walletId)).toBe('99.00');
-    expect(await testApp.get(MetricsService).metrics()).toContain('wallet_reconciliation_divergences_total 1');
+    try {
+      const response = await fetch(`${testBaseUrl}/wallets/${walletId}/reconciliation`, { method: 'POST' });
+      const body: unknown = await response.json();
+      expect(response.status).toBe(200);
+      expect(isJsonObject(body) ? body['consistent'] : undefined).toBe(false);
+      expect(isJsonObject(body) ? body['difference'] : undefined).toEqual({ amount: '-1.00', currency: 'BRL' });
+      expect(await readBalance(walletId, false)).toBe('99.00');
+      expect(await testApp.get(MetricsService).metrics()).toContain('wallet_reconciliation_divergences_total 1');
+    } finally {
+      // Restore only the deliberately corrupted fixture after proving the API did not repair it.
+      await testOrm.em.getConnection().execute('UPDATE wallets SET balance = ? WHERE id = ?', ['100.00', walletId]);
+    }
+    expect(await readBalance(walletId)).toBe('100.00');
   });
 
   it('refunds a processed bet once and replays the original financial result', async () => {
@@ -642,11 +656,13 @@ async function financialCounts(walletId: string): Promise<{ transactions: number
   return rows[0];
 }
 
-async function readBalance(walletId: string): Promise<string> {
-  const rows = await testOrm.em.getConnection().execute<{ balance: string }[]>(
-    'SELECT balance FROM wallets WHERE id = ?',
+async function readBalance(walletId: string, checkLedger = true): Promise<string> {
+  const rows = await testOrm.em.getConnection().execute<Array<{ balance: string; ledger_balance: string }>>(
+    `SELECT w.balance, ROUND(COALESCE(SUM(CASE WHEN e.direction = 'CREDIT' THEN e.amount ELSE -e.amount END), 0), 2)::text AS ledger_balance
+     FROM wallets w LEFT JOIN wallet_ledger_entries e ON e.wallet_id = w.id WHERE w.id = ? GROUP BY w.id`,
     [walletId],
   );
+  if (checkLedger) expect(rows[0].balance).toBe(rows[0].ledger_balance);
   return rows[0].balance;
 }
 
