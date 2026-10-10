@@ -1,7 +1,5 @@
 import { Type } from 'class-transformer';
 import { IsString, Matches, ValidateNested } from 'class-validator';
-import type { Money } from '../domain/money';
-import type { MoneyProps } from '../domain/money';
 import { MoneyDto } from '@/common/dtos/money.dto';
 
 export class CreateWalletRequestDto {
@@ -12,16 +10,4 @@ export class CreateWalletRequestDto {
   @ValidateNested()
   @Type(() => MoneyDto)
   declare initialBalance: MoneyDto;
-}
-
-export interface CreateWalletInputDto {
-  playerId: string;
-  initialBalance: Money;
-}
-
-export interface CreateWalletResponseDto {
-  id: string;
-  playerId: string;
-  balance: MoneyProps;
-  version: number;
 }

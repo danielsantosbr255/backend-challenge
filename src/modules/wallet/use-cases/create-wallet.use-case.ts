@@ -5,7 +5,11 @@ import { Wallet } from '../domain/wallet';
 import { WalletLedgerEntry } from '../domain/wallet-ledger-entry';
 import { WagerTransaction } from '@/modules/wager/domain/wager-transaction';
 import { WALLET_REPOSITORY, type WalletRepositoryInterface } from '../wallet.interface';
-import type { CreateWalletInputDto } from '../dtos/create-wallet.dto';
+
+export interface CreateWalletInput {
+  playerId: string;
+  initialBalance: Money;
+}
 
 @Injectable()
 export class CreateWalletUseCase {
@@ -14,7 +18,7 @@ export class CreateWalletUseCase {
     private readonly walletRepository: WalletRepositoryInterface,
   ) {}
 
-  async execute(input: CreateWalletInputDto): Promise<Wallet> {
+  async execute(input: CreateWalletInput): Promise<Wallet> {
     const openedAt = new Date();
     const wallet = Wallet.open({
       id: uuidv7(),
