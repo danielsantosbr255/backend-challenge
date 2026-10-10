@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsString, Matches, ValidateNested } from 'class-validator';
+import { IsDefined, IsObject, IsString, Matches, ValidateNested } from 'class-validator';
 import { MoneyDto } from '@/common/dtos/money.dto';
 
 export class CreateWalletRequestDto {
@@ -7,6 +7,8 @@ export class CreateWalletRequestDto {
   @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   declare playerId: string;
 
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => MoneyDto)
   declare initialBalance: MoneyDto;

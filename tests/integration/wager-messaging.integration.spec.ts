@@ -198,27 +198,56 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
     }
   }, 30_000);
 
-  it('routes an invalid real SQS delivery to the provisioned DLQ', async () => {
-    const marker = `invalid-${runId}`;
-    await sendWager(marker, `bad-${runId}`);
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      const received = await eventsQueue.send(new ReceiveMessageCommand({
-        QueueUrl: dlqQueueUrl,
-        MaxNumberOfMessages: 10,
-        WaitTimeSeconds: 1,
-      }));
-      const matching = received.Messages?.find((message) => message.Body === marker);
-      if (matching?.ReceiptHandle !== undefined) {
-        await eventsQueue.send(new DeleteMessageCommand({
+  it.each(['invalid-json', 'missing-data', 'array-data', 'missing-money', 'array-money'])(
+    'routes invalid SQS delivery (%s) to the DLQ without persisting a wager or inbox', async (scenario) => {
+      const marker = `invalid-${scenario}-${runId}`;
+      const data = {
+        providerId: `provider-${runId}`,
+        externalTransactionId: marker,
+        idempotencyKey: marker,
+        playerId: crypto.randomUUID(),
+        walletId: crypto.randomUUID(),
+        roundId: 'invalid-envelope-round',
+        gameId: 'integration-game',
+        kind: 'BET',
+        money: scenario === 'missing-money' ? undefined
+          : scenario === 'array-money' ? [{ amount: '10.00', currency: 'BRL' }]
+          : { amount: '10.00', currency: 'BRL' },
+      };
+      const body = scenario === 'invalid-json' ? marker : JSON.stringify({
+        messageId: marker,
+        type: 'WagerTransactionRequested',
+        occurredAt: new Date().toISOString(),
+        data: scenario === 'missing-data' ? undefined : scenario === 'array-data' ? [data] : data,
+      });
+      await sendWager(body, marker);
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const received = await eventsQueue.send(new ReceiveMessageCommand({
           QueueUrl: dlqQueueUrl,
-          ReceiptHandle: matching.ReceiptHandle,
+          MaxNumberOfMessages: 10,
+          WaitTimeSeconds: 1,
         }));
-        return;
+        const matching = received.Messages?.find((message) => message.Body === body);
+        if (matching?.ReceiptHandle !== undefined) {
+          await eventsQueue.send(new DeleteMessageCommand({
+            QueueUrl: dlqQueueUrl,
+            ReceiptHandle: matching.ReceiptHandle,
+          }));
+          await waitForVisibleMessages(0);
+          const rows = await orm.em.getConnection().execute<Array<{ inbox: number; wagers: number }>>(
+            `SELECT
+               (SELECT count(*)::int FROM inbox_messages WHERE message_id = ?) AS inbox,
+               (SELECT count(*)::int FROM wager_transactions WHERE external_transaction_id = ?) AS wagers`,
+            [marker, marker],
+          );
+          expect(rows[0]).toEqual({ inbox: 0, wagers: 0 });
+          return;
+        }
       }
-    }
-    throw new Error('Invalid SQS message did not reach the dead-letter queue');
-  }, 15_000);
+      throw new Error('Invalid SQS message did not reach the dead-letter queue');
+    }, 15_000,
+  );
 
   it('publishes a committed due outbox event after both publisher instances restart', async () => {
     const baseUrl = await app.getUrl();

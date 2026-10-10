@@ -39,6 +39,19 @@ describe('parseWagerMessage', () => {
     }))).toBeUndefined();
   });
 
+  it.each([undefined, null, 'invalid', 1, true, [], [valid.data], {}].map((value): [unknown] => [value]))(
+    'rejects invalid data (%j)', (data: unknown) => {
+      expect(parseWagerMessage(JSON.stringify({ ...valid, data }))).toBeUndefined();
+    },
+  );
+
+  it.each([undefined, null, 'invalid', 1, true, [], [valid.data.money], {}, { amount: '25.00' }]
+    .map((value): [unknown] => [value]))(
+    'rejects invalid nested money (%j)', (money: unknown) => {
+      expect(parseWagerMessage(JSON.stringify({ ...valid, data: { ...valid.data, money } }))).toBeUndefined();
+    },
+  );
+
   it('accepts reversal kinds only with their required external reference', () => {
     expect(parseWagerMessage(JSON.stringify({
       ...valid,

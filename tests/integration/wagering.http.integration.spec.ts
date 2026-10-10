@@ -43,6 +43,45 @@ describe('Wagering HTTP processing', () => {
     await testApp?.close();
   }, 30_000);
 
+  it.each([undefined, null, 'invalid', 1, true, [], [{ amount: '10.00', currency: 'BRL' }], {}, { amount: '10.00' }].map((value): [unknown] => [value]))(
+    'rejects invalid initialBalance (%j) with HTTP 400 before creating a wallet', async (initialBalance: unknown) => {
+      const playerId = crypto.randomUUID();
+      const response = await fetch(`${testBaseUrl}/wallets`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId, initialBalance }),
+      });
+      expect(response.status).toBe(400);
+      const rows = await testOrm.em.getConnection().execute<Array<{ count: number }>>(
+        'SELECT count(*)::int AS count FROM wallets WHERE player_id = ?', [playerId],
+      );
+      expect(rows[0]?.count).toBe(0);
+    },
+  );
+
+  it.each([undefined, null, 'invalid', 1, true, [], [{ amount: '10.00', currency: 'BRL' }], {}, { amount: '10.00' }].map((value): [unknown] => [value]))(
+    'rejects invalid money (%j) with HTTP 400 without persisting financial effects', async (money: unknown) => {
+      const walletId = await createWallet('100.00');
+      const request = wagerRequest(walletId, crypto.randomUUID(), '10.00');
+      const response = await fetch(`${testBaseUrl}/wagering/transactions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': request.key },
+        body: JSON.stringify({ ...request.body, money }),
+      });
+      expect(response.status).toBe(400);
+      expect(await readBalance(walletId)).toBe('100.00');
+      expect(await financialCounts(walletId)).toEqual({ transactions: 1, ledger: 1, outbox: 2 });
+    },
+  );
+
+  it('rejects an invented currency code before wallet creation', async () => {
+    const response = await fetch(`${testBaseUrl}/wallets`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: crypto.randomUUID(), initialBalance: { amount: '10.00', currency: 'ZZZ' } }),
+    });
+    expect(response.status).toBe(400);
+  });
+
   it('records both opening events in the same commit as a positive initial balance', async () => {
     const walletId = await createWallet('100.00');
     const rows: Array<{ event_type: string; transaction_id: string; balance: string }> = await testOrm.em.getConnection().execute(
@@ -376,6 +415,27 @@ describe('Wagering HTTP processing', () => {
     );
     expect(rows[0]).toEqual({ inbox: 1, ledger: 2 });
     expect(await readBalance(walletId)).toBe('90.00');
+  });
+
+  it('normalizes UUID case before wallet ownership checks and idempotency hashing', async () => {
+    const playerId = crypto.randomUUID();
+    const created = await fetch(`${testBaseUrl}/wallets`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: playerId.toUpperCase(), initialBalance: { amount: '100.00', currency: 'BRL' } }),
+    });
+    const wallet = await readResponseObject(created);
+    if (typeof wallet['id'] !== 'string') throw new Error('Missing wallet ID');
+    walletPlayerIds.set(wallet['id'], playerId);
+    const request = wagerRequest(wallet['id'], 'uuid-case', '10.00');
+    const first = await fetch(`${testBaseUrl}/wagering/transactions`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': request.key },
+      body: JSON.stringify({ ...request.body, playerId: playerId.toUpperCase(), walletId: wallet['id'].toUpperCase() }),
+    });
+    expect(first.status).toBe(200);
+    const replay = await submit(request);
+    expect(replay.status).toBe(200);
+    expect(await readWagerResponse(replay)).toMatchObject({ idempotentReplay: true, balance: { amount: '90.00' } });
+    expect(await readBalance(wallet['id'])).toBe('90.00');
   });
 
   it('rolls back the inbox, wager, ledger and balance together when outbox persistence fails', async () => {

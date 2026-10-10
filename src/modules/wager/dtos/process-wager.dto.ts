@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsString, Matches, ValidateIf, ValidateNested } from 'class-validator';
+import { IsDefined, IsIn, IsObject, IsString, Matches, ValidateIf, ValidateNested } from 'class-validator';
 import { MoneyDto } from '@/common/dtos/money.dto';
 import type { ExternalWagerKind } from '../domain/wager-transaction';
 
@@ -33,6 +33,8 @@ export class ProcessWagerRequestDto {
   @IsIn(['BET', 'WIN', 'LOSS', 'REFUND', 'ROLLBACK'])
   declare kind: ExternalWagerKind;
 
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => MoneyDto)
   declare money: MoneyDto;

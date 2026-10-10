@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsString, Matches, ValidateNested } from 'class-validator';
+import { IsDateString, IsDefined, IsIn, IsObject, IsString, Matches, ValidateNested } from 'class-validator';
 import { ProcessWagerMessageDataDto } from './process-wager-message-data.dto';
 
 export class WagerTransactionRequestedDto {
@@ -13,6 +13,8 @@ export class WagerTransactionRequestedDto {
   @IsDateString()
   declare occurredAt: string;
 
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => ProcessWagerMessageDataDto)
   declare data: ProcessWagerMessageDataDto;

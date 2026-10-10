@@ -17,8 +17,8 @@ export function createCanonicalWagerHash(data: CanonicalWagerData): string {
   const canonicalData: Record<string, unknown> = {
     providerId: data.providerId,
     externalTransactionId: data.externalTransactionId,
-    playerId: data.playerId,
-    walletId: data.walletId,
+    playerId: data.playerId.toLowerCase(),
+    walletId: data.walletId.toLowerCase(),
     roundId: data.roundId,
     gameId: data.gameId,
     kind: data.kind,

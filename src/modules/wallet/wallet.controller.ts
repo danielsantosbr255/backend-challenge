@@ -62,7 +62,7 @@ export class WalletController {
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() request: CreateWalletRequestDto): Promise<CreateWalletResponseDto> {
     const wallet = await this.createWallet.execute({
-      playerId: request.playerId,
+      playerId: request.playerId.toLowerCase(),
       initialBalance: Money.from(request.initialBalance),
     });
 

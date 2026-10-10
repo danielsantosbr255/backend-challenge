@@ -1,4 +1,4 @@
-import { IsString, Matches } from 'class-validator';
+import { IsISO4217CurrencyCode, IsString, Matches } from 'class-validator';
 
 export class MoneyDto {
   @IsString()
@@ -7,5 +7,6 @@ export class MoneyDto {
 
   @IsString()
   @Matches(/^[A-Z]{3}$/)
+  @IsISO4217CurrencyCode()
   declare currency: string;
 }
