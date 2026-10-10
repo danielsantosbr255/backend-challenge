@@ -779,3 +779,7 @@ bun run test:all
 ```
 
 Os testes de integração e concorrência usam PostgreSQL e LocalStack reais; mantenha os dois serviços do Compose ativos antes de executá-los. `bun run test` executa somente os testes unitários.
+
+O teste de migrations cria e remove uma base temporária usando o usuário PostgreSQL do Compose. O teste de recuperação inicia e interrompe processos Bun reais; execute as suítes a partir da raiz do repositório. Use uma base dedicada a testes se não quiser acumular as wallets de teste na base local.
+
+`POST /wallets/:walletId/reconciliation` não exige corpo. Logs da aplicação são JSON; `/metrics` expõe as métricas e `/health/ready` verifica PostgreSQL e as três filas. As decisões de escopo, códigos de falha e limites operacionais estão em `ARCHITECTURE.md`.
