@@ -354,6 +354,7 @@ describe('Wagering HTTP processing', () => {
   });
 
   it('accepts a reversal before its reference and processes it after the reference arrives', async () => {
+    const beforeProcessed = await transactionCount('PROCESSED');
     const walletId = await createWallet('100.00');
     const pendingResponse = await submit(
       wagerRequest(walletId, 'pending-refund', '25.00', 'REFUND', 'late-bet'),
@@ -393,9 +394,11 @@ describe('Wagering HTTP processing', () => {
     });
     expect(await readBalance(walletId)).toBe('100.00');
     expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 3, outbox: 7 });
+    expect(await transactionCount('PROCESSED')).toBe(beforeProcessed + 2);
   });
 
   it('rejects an unresolved reference after five durable attempts and records its event', async () => {
+    const beforeRejected = await transactionCount('REJECTED');
     const walletId = await createWallet('100.00');
     const response = await submit(wagerRequest(walletId, 'pending-expired-refund', '25.00', 'REFUND', 'never-arrived'));
     const body = await readWagerResponse(response);
@@ -422,6 +425,7 @@ describe('Wagering HTTP processing', () => {
     expect(rows[0]).toEqual({ status: 'REJECTED', failure_code: 'WAGER_REFERENCE_NOT_FOUND', attempts: 5 });
     expect(events.at(-1)).toEqual({ event_type: 'WagerTransactionRejected', failure_code: 'WAGER_REFERENCE_NOT_FOUND' });
     expect(await readBalance(walletId)).toBe('100.00');
+    expect(await transactionCount('REJECTED')).toBe(beforeRejected + 1);
   });
 
   it('commits the SQS inbox reservation atomically and suppresses redelivery', async () => {
@@ -707,4 +711,11 @@ function readResponseObjectValue(body: Record<string, unknown>, key: string): Re
 
 function isWagerStatus(value: unknown): value is WagerResponse['status'] {
   return value === 'PROCESSED' || value === 'REJECTED' || value === 'PENDING_REFERENCE' || value === 'FAILED';
+}
+
+async function transactionCount(status: string): Promise<number> {
+  const metric = testApp.get(MetricsService).registry.getSingleMetric('wager_transactions_total');
+  if (metric === undefined) throw new Error('Transaction metric is missing');
+  const result = await metric.get();
+  return result.values.find((value) => value.labels?.['status'] === status)?.value ?? 0;
 }

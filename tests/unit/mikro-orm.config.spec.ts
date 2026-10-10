@@ -8,6 +8,7 @@ describe('MikroORM PostgreSQL configuration', () => {
     expect(mikroOrmConfig.user).toBe(process.env.DATABASE_USER);
     expect(mikroOrmConfig.password).toBe(process.env.DATABASE_PASSWORD);
     expect(mikroOrmConfig.dbName).toBe(process.env.DATABASE_NAME);
-    expect(mikroOrmConfig.debug).toBe(process.env.NODE_ENV === 'development');
+    // SQL parameters contain financial values and must never be logged automatically.
+    expect(mikroOrmConfig.debug).toBe(false);
   });
 });

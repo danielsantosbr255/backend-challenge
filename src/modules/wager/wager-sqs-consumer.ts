@@ -1,6 +1,7 @@
 import {
   ChangeMessageVisibilityCommand,
   DeleteMessageCommand,
+  GetQueueAttributesCommand,
   ReceiveMessageCommand,
   SendMessageCommand,
   type Message,
@@ -49,6 +50,14 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
   private async poll(): Promise<void> {
     while (this.running) {
       try {
+        const dlq = await this.sqs.send(new GetQueueAttributesCommand({
+          QueueUrl: this.dlqUrl, AttributeNames: ['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible'],
+        }));
+        const visible = Number(dlq.Attributes?.['ApproximateNumberOfMessages'] ?? '0');
+        const inFlight = Number(dlq.Attributes?.['ApproximateNumberOfMessagesNotVisible'] ?? '0');
+        if (Number.isSafeInteger(visible) && visible >= 0 && Number.isSafeInteger(inFlight) && inFlight >= 0) {
+          this.metrics.setDlqDepth(visible + inFlight);
+        }
         const result = await this.sqs.send(new ReceiveMessageCommand({
           QueueUrl: this.queueUrl,
           MaxNumberOfMessages: 1,
@@ -64,10 +73,10 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
           await this.processMessage(message);
         }
       } catch (error: unknown) {
-        this.logger.error(JSON.stringify({
+        this.logger.error('wager_message_poll_retry', {
           event: 'wager_message_poll_retry',
           errorType: error instanceof Error ? error.name : 'UnknownError',
-        }));
+        });
         await delay(1000);
       }
     }
@@ -85,7 +94,7 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
     try {
       const parsed = parseWagerMessage(message.Body);
       if (parsed === undefined) {
-        await this.moveToDlq(message);
+        await this.moveToDlq(message, context);
         return;
       }
       context = {
@@ -100,9 +109,9 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
         messageId: parsed.messageId,
       });
       context.transactionId = result.transactionId;
-      this.logger.log(JSON.stringify({ event: 'wager_message_processed', ...context, status: result.status }));
+      this.logger.log('wager_message_processed', { event: 'wager_message_processed', ...context, status: result.status });
       if (result.status === 'FAILED') {
-        await this.moveToDlq(message);
+        await this.moveToDlq(message, context);
         return;
       }
       await this.ack(message.ReceiptHandle);
@@ -112,14 +121,14 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
         return;
       }
       if (error instanceof InboxMessageConflictError || error instanceof PermanentInfrastructureError) {
-        await this.moveToDlq(message);
+        await this.moveToDlq(message, context);
         return;
       }
-      this.logger.error(JSON.stringify({
+      this.logger.error('wager_message_retry', {
         event: 'wager_message_retry',
         ...context,
         errorType: error instanceof Error ? error.name : 'UnknownError',
-      }));
+      });
       this.metrics.recordRetry('sqs');
       await this.defer(message);
     }
@@ -145,7 +154,7 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
-  private async moveToDlq(message: Message): Promise<void> {
+  private async moveToDlq(message: Message, context: Record<string, string>): Promise<void> {
     if (message.ReceiptHandle === undefined || message.Body === undefined) return;
     await this.sqs.send(new SendMessageCommand({
       QueueUrl: this.dlqUrl,
@@ -154,14 +163,10 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
       MessageDeduplicationId: message.MessageId ?? message.ReceiptHandle,
     }));
     this.metrics.recordDlqMessage();
-    this.logger.warn(JSON.stringify({
+    this.logger.warn('wager_message_moved_to_dlq', {
       event: 'wager_message_moved_to_dlq',
-      messageId: message.MessageId ?? 'unknown',
-      correlationId: 'unknown',
-      transactionId: 'unknown',
-      walletId: 'unknown',
-      providerId: 'unknown',
-    }));
+      ...context,
+    });
     await this.ack(message.ReceiptHandle);
   }
 }

@@ -42,7 +42,8 @@ export class QueryWalletUseCase {
     const consistent = result.difference.amount === '0.00';
     if (!consistent) {
       this.metrics.recordReconciliationDivergence();
-      this.logger.error(JSON.stringify({ event: 'wallet_reconciliation_divergence', walletId }));
+      this.logger.error('wallet_reconciliation_divergence', { event: 'wallet_reconciliation_divergence', walletId,
+        correlationId: walletId, messageId: 'http', transactionId: 'none', providerId: 'internal' });
     }
     return { ...result, consistent };
   }

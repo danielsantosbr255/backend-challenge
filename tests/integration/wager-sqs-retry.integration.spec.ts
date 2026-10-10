@@ -188,6 +188,7 @@ describe('SQS transient retry (PostgreSQL and LocalStack)', () => {
             roundId: 'exhausted-round', gameId: 'retry-test', kind: 'BET', money: { amount: '10.00', currency: 'BRL' } } }),
       }));
       await waitUntil(async () => await queueSize(dlqUrl) === 1, 15_000);
+      await waitUntil(async () => (await app.get(MetricsService).metrics()).includes('wager_dlq_messages 1'), 15_000);
       const rows = await orm.em.getConnection().execute<Array<{ wagers: number; inbox: number }>>(
         `SELECT (SELECT count(*)::int FROM wager_transactions WHERE provider_id = ?) AS wagers,
                 (SELECT count(*)::int FROM inbox_messages WHERE message_id = ?) AS inbox`, [providerId, messageId],

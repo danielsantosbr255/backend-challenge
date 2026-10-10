@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { MetricsService } from '@/common/observability/metrics.service';
 import { v7 as uuidv7 } from 'uuid';
 import { PermanentInfrastructureError } from '@/common/errors/permanent-infrastructure.error';
@@ -26,6 +26,7 @@ import { nextReferenceRetry } from './wager-reference-retry';
 
 @Injectable()
 export class ProcessWagerUseCase {
+  private readonly logger = new Logger(ProcessWagerUseCase.name);
   constructor(
     @Inject(WAGER_REPOSITORY)
     private readonly repository: WagerRepositoryInterface,
@@ -35,9 +36,21 @@ export class ProcessWagerUseCase {
 
   async execute(input: ProcessWagerInput, ingress?: WagerIngressContext): Promise<ProcessWagerResponseDto> {
     const startedAt = performance.now();
-    const result = await this.process(input, ingress);
-    this.metrics.recordTransaction(result.status, (performance.now() - startedAt) / 1000, result.idempotentReplay);
-    return result;
+    const context = {
+      correlationId: input.externalTransactionId, messageId: ingress?.messageId ?? 'http',
+      walletId: input.walletId, providerId: input.providerId,
+    };
+    try {
+      const result = await this.process(input, ingress);
+      this.metrics.recordTransaction(result.status, (performance.now() - startedAt) / 1000, result.idempotentReplay);
+      this.logger.log('wager_processed', { ...context, transactionId: result.transactionId,
+        status: result.status, idempotentReplay: result.idempotentReplay });
+      return result;
+    } catch (error: unknown) {
+      this.logger.warn('wager_processing_failed', { ...context, transactionId: 'unknown',
+        errorType: error instanceof Error ? error.name : 'UnknownError' });
+      throw error;
+    }
   }
 
   private async process(input: ProcessWagerInput, ingress?: WagerIngressContext): Promise<ProcessWagerResponseDto> {

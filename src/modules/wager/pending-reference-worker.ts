@@ -25,10 +25,10 @@ export class PendingReferenceWorker implements OnModuleInit, OnModuleDestroy {
       try {
         if (await this.processPendingReferences.execute() === 0) await delay(1000);
       } catch (error: unknown) {
-        this.logger.error(JSON.stringify({
+        this.logger.error('wager_reference_recovery_retry', {
           event: 'wager_reference_recovery_retry',
           errorType: error instanceof Error ? error.name : 'UnknownError',
-        }));
+        });
         await delay(1000);
       }
     }

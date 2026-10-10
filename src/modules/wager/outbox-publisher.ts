@@ -61,10 +61,10 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
           await this.publish(event);
         }
       } catch (error: unknown) {
-        this.logger.error(JSON.stringify({
+        this.logger.error('outbox_poll_retry', {
           event: 'outbox_poll_retry',
           errorType: error instanceof Error ? error.name : 'UnknownError',
-        }));
+        });
         await delay(1000);
       }
     }
@@ -127,11 +127,11 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
          WHERE id = ? AND claimed_by = ? AND published_at IS NULL`,
         [retry.nextAttemptAt, retry.attempts, event.id, this.ownerId],
       );
-      this.logger.error(JSON.stringify({
+      this.logger.error('outbox_publish_retry', {
         event: 'outbox_publish_retry',
         ...outboxLogContext(event),
         errorType: error instanceof Error ? error.name : 'UnknownError',
-      }));
+      });
     }
   }
 }

@@ -16,6 +16,9 @@ export class MetricsService {
   private readonly dlq = new Counter({
     name: 'wager_dlq_messages_total', help: 'Messages moved to the dead-letter queue', registers: [this.registry],
   });
+  private readonly dlqDepth = new Gauge({
+    name: 'wager_dlq_messages', help: 'Current DLQ depth, including broker redrive', registers: [this.registry],
+  });
   private readonly lockConflicts = new Counter({
     name: 'wager_lock_conflicts_total', help: 'Database lock conflicts encountered', registers: [this.registry],
   });
@@ -38,6 +41,7 @@ export class MetricsService {
 
   recordRetry(area: 'sqs' | 'outbox' | 'reference'): void { this.retries.inc({ area }); }
   recordDlqMessage(): void { this.dlq.inc(); }
+  setDlqDepth(messages: number): void { this.dlqDepth.set(messages); }
   recordLockConflict(): void { this.lockConflicts.inc(); }
   recordReconciliationDivergence(): void { this.reconciliationDivergences.inc(); }
   setOutboxLag(seconds: number): void { this.outboxLag.set(Math.max(0, seconds)); }

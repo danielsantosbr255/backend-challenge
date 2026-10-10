@@ -14,7 +14,7 @@ export const mikroOrmConfig: Options = defineConfig({
   user: env.DATABASE_USER,
   password: env.DATABASE_PASSWORD,
   dbName: env.DATABASE_NAME,
-  debug: env.NODE_ENV === 'development',
+  debug: false,
   entities: [WalletEntity, WagerTransactionEntity, WalletLedgerEntryEntity, InboxMessageEntity, OutboxMessageEntity],
   discovery: {
     warnWhenNoEntities: false,

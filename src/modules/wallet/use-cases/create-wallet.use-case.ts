@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { Money } from '../domain/money';
 import { Wallet } from '../domain/wallet';
@@ -13,6 +13,7 @@ export interface CreateWalletInput {
 
 @Injectable()
 export class CreateWalletUseCase {
+  private readonly logger = new Logger(CreateWalletUseCase.name);
   constructor(
     @Inject(WALLET_REPOSITORY)
     private readonly walletRepository: WalletRepositoryInterface,
@@ -26,9 +27,11 @@ export class CreateWalletUseCase {
       initialBalance: input.initialBalance,
       openedAt,
     });
+    const logContext = { correlationId: wallet.id, messageId: 'http', walletId: wallet.id, providerId: 'internal' };
 
     if (!wallet.balance.isPositive()) {
       await this.walletRepository.persistNewWallet(wallet);
+      this.logger.log('wallet_opened', { ...logContext, transactionId: 'none' });
       return wallet;
     }
 
@@ -54,6 +57,7 @@ export class CreateWalletUseCase {
       transaction: openingTransaction,
       ledgerEntry: openingLedgerEntry,
     });
+    this.logger.log('wallet_opened', { ...logContext, transactionId: openingTransaction.id });
     return wallet;
   }
 }
