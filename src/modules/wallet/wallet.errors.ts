@@ -55,3 +55,10 @@ export class WalletAlreadyExistsError extends ApplicationError {
     this.name = 'WalletAlreadyExistsError';
   }
 }
+
+export class WalletNotFoundError extends ApplicationError {
+  constructor() {
+    super('WALLET_NOT_FOUND', 'Wallet was not found');
+    this.name = 'WalletNotFoundError';
+  }
+}

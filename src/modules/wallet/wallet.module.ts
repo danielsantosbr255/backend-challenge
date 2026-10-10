@@ -7,12 +7,15 @@ import { CreateWalletUseCase } from './use-cases/create-wallet.use-case';
 import { WALLET_REPOSITORY } from './wallet.interface';
 import { WalletRepository } from './wallet.repository';
 import { WalletController } from './wallet.controller';
+import { QueryWalletUseCase } from './use-cases/query-wallet.use-case';
+import { MetricsModule } from '@/common/observability/metrics.module';
 
 @Module({
-  imports: [MikroOrmModule.forFeature([WalletEntity, WagerTransactionEntity, WalletLedgerEntryEntity])],
+  imports: [MetricsModule, MikroOrmModule.forFeature([WalletEntity, WagerTransactionEntity, WalletLedgerEntryEntity])],
   controllers: [WalletController],
   providers: [
     CreateWalletUseCase,
+    QueryWalletUseCase,
     WalletRepository,
     { provide: WALLET_REPOSITORY, useExisting: WalletRepository },
   ],
