@@ -747,3 +747,35 @@ wallet.balance == saldo reconstruído pelo ledger
 ### Diferenciais opcionais
 
 Teste de carga também conta como diferencial. Se fizer, exponha como `bun run test:load` e registre ambiente, metodologia, throughput, p50/p95/p99, taxa de erro, conflitos de concorrência e outbox lag. Não há meta de RPS — a qualidade do experimento e a honestidade da análise pesam mais que o número bruto.
+
+---
+
+## 15. Execução local
+
+Requisitos locais: Bun 1.x e Docker Compose.
+
+```sh
+bun install
+```
+
+Copie `.env.example` para `.env`, depois suba PostgreSQL e LocalStack e aplique as migrations:
+
+```sh
+docker compose -f compose.yml up -d postgres localstack
+bun run migration:up
+bun run start:dev
+```
+
+A API fica disponível em `http://localhost:3000`. O script `scripts/init-localstack.sh` cria as filas FIFO de entrada, DLQ e eventos.
+
+Verificações disponíveis:
+
+```sh
+bun run typecheck
+bun run test
+bun run test:integration
+bun run test:concurrency
+bun run test:all
+```
+
+Os testes de integração e concorrência usam PostgreSQL e LocalStack reais; mantenha os dois serviços do Compose ativos antes de executá-los. `bun run test` executa somente os testes unitários.
