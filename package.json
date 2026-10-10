@@ -6,6 +6,10 @@
   "scripts": {
     "start": "bun run src/main.ts",
     "start:dev": "bun --watch run src/main.ts",
+    "migration:create": "bunx --bun mikro-orm migration:create",
+    "migration:up": "bunx --bun mikro-orm migration:up",
+    "migration:down": "bunx --bun mikro-orm migration:down",
+    "migration:check": "bunx --bun mikro-orm migration:check",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests/unit",
     "test:integration": "bun test tests/integration",
@@ -32,6 +36,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@mikro-orm/cli": "7.2.4",
     "@types/bun": "latest",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.4",
