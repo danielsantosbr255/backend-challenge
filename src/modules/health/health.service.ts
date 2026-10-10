@@ -70,9 +70,10 @@ export class HealthService {
   private async checkSqs(): Promise<void> {
     const queueUrl = this.configService.getOrThrow<string>('SQS_QUEUE_URL');
     const deadLetterQueueUrl = this.configService.getOrThrow<string>('SQS_DLQ_URL');
+    const eventsQueueUrl = this.configService.getOrThrow<string>('SQS_EVENTS_QUEUE_URL');
 
     await Promise.all(
-      [queueUrl, deadLetterQueueUrl].map((url) =>
+      [queueUrl, deadLetterQueueUrl, eventsQueueUrl].map((url) =>
         this.sqsClient.send(
           new GetQueueAttributesCommand({
             QueueUrl: url,

@@ -15,6 +15,7 @@ export const mikroOrmConfig: Options = defineConfig({
   password: env.DATABASE_PASSWORD,
   dbName: env.DATABASE_NAME,
   debug: false,
+  driverOptions: { connectionTimeoutMillis: 5000, statement_timeout: 10_000, idle_in_transaction_session_timeout: 15_000 },
   entities: [WalletEntity, WagerTransactionEntity, WalletLedgerEntryEntity, InboxMessageEntity, OutboxMessageEntity],
   discovery: {
     warnWhenNoEntities: false,

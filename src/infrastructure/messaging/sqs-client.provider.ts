@@ -19,6 +19,8 @@ export const SqsClientProvider: Provider = {
 
     return new SQSClient({
       region,
+      maxAttempts: 2,
+      requestHandler: { connectionTimeout: 3000, requestTimeout: 15_000, throwOnRequestTimeout: true },
       ...(endpoint ? { endpoint } : {}),
       ...(accessKeyId && secretAccessKey
         ? { credentials: { accessKeyId, secretAccessKey } }

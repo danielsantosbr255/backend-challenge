@@ -49,6 +49,13 @@ describe('HealthService', () => {
     expect(result.errors).toEqual({ sqs: 'unavailable' });
     expect(JSON.stringify(result)).not.toContain('endpoint details');
   });
+
+  it('checks the publication queue as well as ingress and DLQ', async () => {
+    let checks = 0;
+    const service = await createHealthService(async () => undefined, async () => { checks += 1; });
+    expect((await service.checkReadiness()).isReady).toBe(true);
+    expect(checks).toBe(3);
+  });
 });
 
 async function createHealthService(
