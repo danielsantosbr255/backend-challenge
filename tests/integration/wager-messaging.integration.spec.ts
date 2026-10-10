@@ -31,7 +31,9 @@ import { validateEnv } from '@/infrastructure/config/env.schema';
 
 const runId = crypto.randomUUID();
 const ingressQueueName = `wager-transactions-test-${runId}.fifo`;
+const dlqQueueName = `wager-transactions-test-dlq-${runId}.fifo`;
 let ingressQueueUrl = `http://localhost:4566/000000000000/${ingressQueueName}`;
+let dlqQueueUrl = `http://localhost:4566/000000000000/${dlqQueueName}`;
 const eventsQueueName = `wager-events-test-${runId}.fifo`;
 let eventsQueueUrl = `http://localhost:4566/000000000000/${eventsQueueName}`;
 const eventsQueue = new SQSClient({
@@ -58,6 +60,7 @@ class OutboxMaintenanceModule {}
       validate: (config) => validateEnv({
         ...config,
         SQS_QUEUE_URL: ingressQueueUrl,
+        SQS_DLQ_URL: dlqQueueUrl,
         SQS_EVENTS_QUEUE_URL: eventsQueueUrl,
       }),
     }),
@@ -82,6 +85,12 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
     if (ingressCreated.QueueUrl === undefined) throw new Error('LocalStack did not return the ingress queue URL');
     ingressQueueUrl = ingressCreated.QueueUrl;
     ingressQueueCreated = true;
+    const dlqCreated = await eventsQueue.send(new CreateQueueCommand({
+      QueueName: dlqQueueName,
+      Attributes: { FifoQueue: 'true', ContentBasedDeduplication: 'false' },
+    }));
+    if (dlqCreated.QueueUrl === undefined) throw new Error('LocalStack did not return the DLQ URL');
+    dlqQueueUrl = dlqCreated.QueueUrl;
     const created = await eventsQueue.send(new CreateQueueCommand({
       QueueName: eventsQueueName,
       Attributes: { FifoQueue: 'true', ContentBasedDeduplication: 'false' },
@@ -101,6 +110,7 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
     await app?.close();
     await secondPublisherApp?.close();
     if (ingressQueueCreated) await eventsQueue.send(new DeleteQueueCommand({ QueueUrl: ingressQueueUrl }));
+    await eventsQueue.send(new DeleteQueueCommand({ QueueUrl: dlqQueueUrl }));
     if (eventsCreated) await eventsQueue.send(new DeleteQueueCommand({ QueueUrl: eventsQueueUrl }));
     eventsQueue.destroy();
   }, 30_000);
@@ -194,14 +204,14 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
       const received = await eventsQueue.send(new ReceiveMessageCommand({
-        QueueUrl: process.env.SQS_DLQ_URL,
+        QueueUrl: dlqQueueUrl,
         MaxNumberOfMessages: 10,
         WaitTimeSeconds: 1,
       }));
       const matching = received.Messages?.find((message) => message.Body === marker);
       if (matching?.ReceiptHandle !== undefined) {
         await eventsQueue.send(new DeleteMessageCommand({
-          QueueUrl: process.env.SQS_DLQ_URL,
+          QueueUrl: dlqQueueUrl,
           ReceiptHandle: matching.ReceiptHandle,
         }));
         return;
