@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { MetricsService } from '@/common/observability/metrics.service';
 import { v7 as uuidv7 } from 'uuid';
-import { TransientInfrastructureError } from '@/common/errors/transient-infrastructure.error';
+import { PermanentInfrastructureError } from '@/common/errors/permanent-infrastructure.error';
 import { WagerTransaction } from '../domain/wager-transaction';
 import { createCanonicalWagerHash } from '../wager.utils';
 import {
@@ -122,7 +122,7 @@ export class ProcessWagerUseCase {
         if (existing !== undefined) return replayOrConflict(existing, payloadHash);
         throw error;
       }
-      if (failureContext === undefined || error instanceof TransientInfrastructureError) throw error;
+      if (failureContext === undefined || !(error instanceof PermanentInfrastructureError)) throw error;
 
       const failed = createWagerTransaction(input, payloadHash, failureContext.transactionId, failureContext.createdAt);
       failed.fail('PERMANENT_INFRASTRUCTURE_FAILURE');

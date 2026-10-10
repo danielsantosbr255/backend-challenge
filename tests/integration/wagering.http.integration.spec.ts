@@ -12,6 +12,7 @@ import { ProcessWagerUseCase } from '@/modules/wager/use-cases/process-wager.use
 import { ProcessPendingWagerReferencesUseCase } from '@/modules/wager/use-cases/process-pending-wager-references.use-case';
 import { Money } from '@/modules/wallet/domain/money';
 import { MetricsService } from '@/common/observability/metrics.service';
+import { withBlockedOutbox } from './helpers/blocked-outbox';
 
 let testOrm: MikroORM;
 let testApp: INestApplication;
@@ -128,6 +129,35 @@ describe('Wagering HTTP processing', () => {
       await connection.execute(`DROP TRIGGER ${triggerName} ON outbox_messages`);
       await connection.execute(`DROP FUNCTION ${triggerName}()`);
     }
+  });
+
+  it('allows a wager to retry after a real PostgreSQL lock timeout without retaining a failed operation', async () => {
+    const walletId = await createWallet('100.00');
+    const request = wagerRequest(walletId, 'recoverable-lock-timeout', '10.00');
+    await withBlockedOutbox(testOrm, integrationProviderId, request.body.externalTransactionId, async () => {
+      const timedOut = await submit(request);
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.text()).not.toContain('lock timeout');
+      expect(await testApp.get(MetricsService).metrics()).toContain('wager_lock_conflicts_total 1');
+      expect(await readBalance(walletId)).toBe('100.00');
+      expect(await financialCounts(walletId)).toEqual({ transactions: 1, ledger: 1, outbox: 2 });
+      const transactionQuery = await fetch(
+        `${testBaseUrl}/providers/${integrationProviderId}/wagering/transactions/recoverable-lock-timeout`,
+      );
+      expect(transactionQuery.status).toBe(404);
+    });
+
+    const recovered = await submit(request);
+    expect(recovered.status).toBe(200);
+    expect(await readWagerResponse(recovered)).toMatchObject({ status: 'PROCESSED', idempotentReplay: false });
+    expect(await readBalance(walletId)).toBe('90.00');
+    expect(await financialCounts(walletId)).toEqual({ transactions: 2, ledger: 2, outbox: 4 });
+    const replay = await submit(request);
+    expect(await readWagerResponse(replay)).toMatchObject({ status: 'PROCESSED', idempotentReplay: true });
+    const reconciliation = await fetch(`${testBaseUrl}/wallets/${walletId}/reconciliation`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ walletId }),
+    });
+    expect(await reconciliation.json()).toMatchObject({ consistent: true, calculatedBalance: { amount: '90.00' } });
   });
 
   it('applies one debit for 50 parallel deliveries of the same wager and replays the original result', async () => {
@@ -449,7 +479,7 @@ describe('Wagering HTTP processing', () => {
       `CREATE FUNCTION ${triggerName}() RETURNS trigger AS $$
        BEGIN
          IF NEW.payload->'data'->>'externalTransactionId' = TG_ARGV[0] THEN
-           RAISE EXCEPTION 'forced outbox failure';
+           RAISE EXCEPTION 'forced outbox permission failure' USING ERRCODE = '42501';
          END IF;
          RETURN NEW;
        END; $$ LANGUAGE plpgsql`,
@@ -506,6 +536,39 @@ describe('Wagering HTTP processing', () => {
     expect(await readBalance(walletId)).toBe('100.00');
   });
 
+  it('does not make an unclassified database error terminal and allows retry after recovery', async () => {
+    const walletId = await createWallet('100.00');
+    const request = wagerRequest(walletId, 'unclassified-outbox-error', '10.00');
+    const triggerName = `test_unknown_outbox_${integrationRunId.replaceAll('-', '')}`;
+    const connection = testOrm.em.getConnection();
+    await connection.execute(
+      `CREATE FUNCTION ${triggerName}() RETURNS trigger AS $$
+       BEGIN
+         IF NEW.payload->'data'->>'externalTransactionId' = TG_ARGV[0] THEN
+           RAISE EXCEPTION 'unclassified server failure';
+         END IF;
+         RETURN NEW;
+       END; $$ LANGUAGE plpgsql`,
+    );
+    await connection.execute(
+      `CREATE TRIGGER ${triggerName} BEFORE INSERT ON outbox_messages
+       FOR EACH ROW EXECUTE FUNCTION ${triggerName}('unclassified-outbox-error')`,
+    );
+    try {
+      const response = await submit(request);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ code: 'INTERNAL_SERVER_ERROR', message: 'Internal server error' });
+      expect(await financialCounts(walletId)).toEqual({ transactions: 1, ledger: 1, outbox: 2 });
+      expect(await readBalance(walletId)).toBe('100.00');
+    } finally {
+      await connection.execute(`DROP TRIGGER ${triggerName} ON outbox_messages`);
+      await connection.execute(`DROP FUNCTION ${triggerName}()`);
+    }
+    const recovered = await submit(request);
+    expect(recovered.status).toBe(200);
+    expect(await readWagerResponse(recovered)).toMatchObject({ status: 'PROCESSED', idempotentReplay: false });
+    expect(await readBalance(walletId)).toBe('90.00');
+  });
 });
 
 interface WagerResponse {

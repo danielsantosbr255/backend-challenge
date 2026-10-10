@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-sqs';
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { MetricsService } from '@/common/observability/metrics.service';
+import { PermanentInfrastructureError } from '@/common/errors/permanent-infrastructure.error';
 import { ConfigService } from '@nestjs/config';
 import { delay, exponentialBackoffSeconds } from '@/common/async/retry';
 import { SQS_CLIENT } from '@/infrastructure/messaging/sqs-client.provider';
@@ -110,7 +111,7 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
         await this.ack(message.ReceiptHandle);
         return;
       }
-      if (error instanceof InboxMessageConflictError) {
+      if (error instanceof InboxMessageConflictError || error instanceof PermanentInfrastructureError) {
         await this.moveToDlq(message);
         return;
       }

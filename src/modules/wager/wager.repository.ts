@@ -1,15 +1,12 @@
 import {
-  ConnectionException,
-  DeadlockException,
   EntityManager,
   LockMode,
-  LockWaitTimeoutException,
   UniqueConstraintViolationException,
   type InferEntity,
 } from '@mikro-orm/core';
 import { Inject, Injectable } from '@nestjs/common';
 import { MetricsService } from '@/common/observability/metrics.service';
-import { TransientInfrastructureError } from '@/common/errors/transient-infrastructure.error';
+import { isPersistenceLockConflict, rethrowPersistenceError } from '@/infrastructure/persistence/persistence-error';
 import type { Wallet } from '@/modules/wallet/domain/wallet';
 import type { WalletLedgerEntry } from '@/modules/wallet/domain/wallet-ledger-entry';
 import type { WagerTransaction } from '@/modules/wager/domain/wager-transaction';
@@ -76,17 +73,14 @@ export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWor
           throw new WagerAlreadyReversedError();
         }
       }
-      if (isTransientPersistenceError(error)) {
-        if (error instanceof DeadlockException || error instanceof LockWaitTimeoutException) this.metrics.recordLockConflict();
-        throw new TransientInfrastructureError();
-      }
-      throw error;
+      if (isPersistenceLockConflict(error)) this.metrics.recordLockConflict();
+      rethrowPersistenceError(error);
     }
   }
 
   async findByIdempotency(providerId: string, idempotencyKey: string): Promise<StoredWagerResult | undefined> {
     const em = this.transactionScoped ? this.em : this.em.fork();
-    const entity = await em.findOne(WagerTransactionEntity, { providerId, idempotencyKey });
+    const entity = await em.findOne(WagerTransactionEntity, { providerId, idempotencyKey }).catch(rethrowPersistenceError);
     return entity === null ? undefined : toStoredWagerResult(entity);
   }
 
@@ -97,17 +91,17 @@ export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWor
        ORDER BY reference_next_attempt_at, id
        LIMIT ?`,
       [now, limit],
-    );
+    ).catch(rethrowPersistenceError);
     return rows.map(({ id }) => id);
   }
 
   async findTransaction(transactionId: string): Promise<WagerTransactionQuery | undefined> {
-    const entity = await this.em.fork().findOne(WagerTransactionEntity, { id: transactionId });
+    const entity = await this.em.fork().findOne(WagerTransactionEntity, { id: transactionId }).catch(rethrowPersistenceError);
     return entity === null ? undefined : toWagerTransactionQuery(entity);
   }
 
   async findProviderTransaction(providerId: string, externalTransactionId: string): Promise<WagerTransactionQuery | undefined> {
-    const entity = await this.em.fork().findOne(WagerTransactionEntity, { providerId, externalTransactionId });
+    const entity = await this.em.fork().findOne(WagerTransactionEntity, { providerId, externalTransactionId }).catch(rethrowPersistenceError);
     return entity === null ? undefined : toWagerTransactionQuery(entity);
   }
 
@@ -258,11 +252,8 @@ export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWor
       });
     } catch (error: unknown) {
       if (error instanceof UniqueConstraintViolationException) return false;
-      if (isTransientPersistenceError(error)) {
-        if (error instanceof DeadlockException || error instanceof LockWaitTimeoutException) this.metrics.recordLockConflict();
-        throw new TransientInfrastructureError();
-      }
-      throw error;
+      if (isPersistenceLockConflict(error)) this.metrics.recordLockConflict();
+      rethrowPersistenceError(error);
     }
   }
 
@@ -284,10 +275,6 @@ function readConstraint(error: UniqueConstraintViolationException): string | und
     return error.constraint;
   }
   return undefined;
-}
-
-function isTransientPersistenceError(error: unknown): boolean {
-  return error instanceof ConnectionException || error instanceof DeadlockException || error instanceof LockWaitTimeoutException;
 }
 
 function toWagerTransactionQuery(entity: InferEntity<typeof WagerTransactionEntity>): WagerTransactionQuery {

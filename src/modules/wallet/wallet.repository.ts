@@ -18,6 +18,7 @@ import { toOutboxEntityData, toWagerEntityData } from '@/modules/wager/wager.map
 import { createWagerEvents } from '@/modules/wager/wager.events';
 import { OutboxMessageEntity } from '@/modules/wager/entities/outbox-message.entity';
 import { Money } from './domain/money';
+import { rethrowPersistenceError } from '@/infrastructure/persistence/persistence-error';
 
 @Injectable()
 export class WalletRepository implements WalletRepositoryInterface {
@@ -51,12 +52,12 @@ export class WalletRepository implements WalletRepositoryInterface {
       if (isWalletUniquenessConflict(error)) {
         throw new WalletAlreadyExistsError();
       }
-      throw error;
+      rethrowPersistenceError(error);
     }
   }
 
   async findById(walletId: string): Promise<Wallet | undefined> {
-    const entity = await this.em.fork().findOne(WalletEntity, { id: walletId });
+    const entity = await this.em.fork().findOne(WalletEntity, { id: walletId }).catch(rethrowPersistenceError);
     return entity === null ? undefined : toWalletDomain(entity);
   }
 
@@ -70,7 +71,7 @@ export class WalletRepository implements WalletRepositoryInterface {
        WHERE e.wallet_id = ? AND (?::timestamptz IS NULL OR (e.created_at, e.id) < (?, ?::uuid))
        ORDER BY e.created_at DESC, e.id DESC LIMIT ?`,
       [walletId, cursor?.createdAt ?? null, cursor?.createdAt ?? null, cursor?.id ?? null, limit + 1],
-    );
+    ).catch(rethrowPersistenceError);
     const hasMore = rows.length > limit;
     const entries = rows.slice(0, limit).map((row: LedgerRow) => {
       const { wallet_currency, ...entry } = row;
@@ -99,7 +100,7 @@ export class WalletRepository implements WalletRepositoryInterface {
        FROM wallets w LEFT JOIN wallet_ledger_entries e ON e.wallet_id = w.id
        WHERE w.id = ? GROUP BY w.id`,
       [walletId],
-    );
+    ).catch(rethrowPersistenceError);
     const row = rows[0];
     if (row === undefined) return undefined;
     const calculated = Money.from({ amount: row.credits ?? '0.00', currency: row.currency })
