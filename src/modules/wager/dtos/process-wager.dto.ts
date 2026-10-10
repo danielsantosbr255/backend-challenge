@@ -4,6 +4,8 @@ import type { Money } from '@/modules/wallet/domain/money';
 import type { MoneyProps } from '@/modules/wallet/domain/money';
 import { MoneyDto } from '@/common/dtos/money.dto';
 
+export const IDEMPOTENCY_KEY_PATTERN = /^(?=.*\S).{1,255}$/;
+
 export class ProcessWagerRequestDto {
   @IsString()
   @Matches(/^[a-zA-Z0-9._:-]{1,100}$/)

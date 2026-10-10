@@ -26,5 +26,6 @@ import { WagerController } from './wager.controller';
     WagerRepository,
     { provide: WAGER_REPOSITORY, useExisting: WagerRepository },
   ],
+  exports: [ProcessWagerUseCase],
 })
 export class WagerModule {}

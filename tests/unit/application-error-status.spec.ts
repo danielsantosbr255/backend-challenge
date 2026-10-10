@@ -8,6 +8,7 @@ import {
   InvalidPersistedWagerResultError,
   WagerWalletMismatchError,
 } from '@/modules/wager/wager.errors';
+import { TransientInfrastructureError } from '@/common/errors/transient-infrastructure.error';
 import { getHttpStatusForApplicationError } from '@/infrastructure/http/application-error-status';
 
 describe('application error HTTP mapping', () => {
@@ -25,5 +26,9 @@ describe('application error HTTP mapping', () => {
     expect(getHttpStatusForApplicationError(new InvalidPersistedWagerResultError())).toBe(
       HttpStatus.INTERNAL_SERVER_ERROR,
     );
+  });
+
+  it('maps recognized temporary infrastructure failures to retryable 503 responses', () => {
+    expect(getHttpStatusForApplicationError(new TransientInfrastructureError())).toBe(HttpStatus.SERVICE_UNAVAILABLE);
   });
 });

@@ -8,6 +8,8 @@ import { WalletModule } from '@/modules/wallet/wallet.module';
 import { WagerModule } from '@/modules/wager/wager.module';
 import { mikroOrmConfig } from '@/infrastructure/persistence/mikro-orm.config';
 import { GlobalHttpExceptionFilter } from '@/infrastructure/http/global-http-exception.filter';
+import { ProcessWagerUseCase } from '@/modules/wager/use-cases/process-wager.use-case';
+import { Money } from '@/modules/wallet/domain/money';
 
 let testOrm: MikroORM;
 let testApp: INestApplication;
@@ -60,7 +62,7 @@ describe('Wagering HTTP processing', () => {
     const responses = await Promise.all(requests.map(submit));
     const bodies = await Promise.all(responses.map((response) => response.json() as Promise<WagerResponse>));
 
-    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 422]);
     expect(bodies.map((body) => body.status).sort()).toEqual(['PROCESSED', 'REJECTED']);
     expect(bodies.find((body) => body.status === 'REJECTED')?.failureCode).toBe('INSUFFICIENT_FUNDS');
     expect(await readBalance(walletId)).toBe('20.00');
@@ -90,6 +92,43 @@ describe('Wagering HTTP processing', () => {
     expect(lossBody.balance.amount).toBe('15.00');
     expect(await readBalance(walletId)).toBe('15.00');
     expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 2, outbox: 3 });
+  });
+
+  it('commits the SQS inbox reservation atomically and suppresses redelivery', async () => {
+    const walletId = await createWallet('100.00');
+    const request = wagerRequest(walletId, 'inbox-redelivery', '10.00');
+    const useCase = testApp.get(ProcessWagerUseCase);
+    const playerId = walletPlayerIds.get(walletId);
+    if (playerId === undefined) throw new Error('Wallet player ID is missing');
+    const input = {
+      providerId: request.body.providerId,
+      externalTransactionId: request.body.externalTransactionId,
+      idempotencyKey: request.key,
+      playerId,
+      walletId,
+      roundId: request.body.roundId,
+      gameId: request.body.gameId,
+      kind: request.body.kind,
+      money: Money.from(request.body.money),
+    };
+    const ingress = {
+      consumerName: 'wager-transactions-v1',
+      messageId: 'sqs-message-redelivery',
+    };
+
+    const first = await useCase.execute(input, ingress);
+    const replay = await useCase.execute(input, ingress);
+    expect(first.idempotentReplay).toBe(false);
+    expect(replay.idempotentReplay).toBe(true);
+
+    const rows = await testOrm.em.getConnection().execute<Array<{ inbox: number; ledger: number }>>(
+      `SELECT
+         (SELECT count(*)::int FROM inbox_messages WHERE consumer_name = ? AND message_id = ?) AS inbox,
+         (SELECT count(*)::int FROM wallet_ledger_entries WHERE wallet_id = ?) AS ledger`,
+      [ingress.consumerName, ingress.messageId, walletId],
+    );
+    expect(rows[0]).toEqual({ inbox: 1, ledger: 2 });
+    expect(await readBalance(walletId)).toBe('90.00');
   });
 });
 

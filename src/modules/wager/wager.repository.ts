@@ -1,6 +1,15 @@
-import { EntityManager, LockMode, UniqueConstraintViolationException, type InferEntity } from '@mikro-orm/core';
+import {
+  ConnectionException,
+  DeadlockException,
+  EntityManager,
+  LockMode,
+  LockWaitTimeoutException,
+  UniqueConstraintViolationException,
+  type InferEntity,
+} from '@mikro-orm/core';
 import { Inject, Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
+import { TransientInfrastructureError } from '@/common/errors/transient-infrastructure.error';
 import type { Wallet } from '@/modules/wallet/domain/wallet';
 import type { WalletLedgerEntry } from '@/modules/wallet/domain/wallet-ledger-entry';
 import type { WagerTransaction } from '@/modules/wager/domain/wager-transaction';
@@ -12,6 +21,7 @@ import {
 } from './wager.interface';
 import {
   InvalidWagerUnitOfWorkStateError,
+  InboxMessageConflictError,
   WagerReservationConflictError,
 } from './wager.errors';
 import { OutboxMessageEntity } from './entities/outbox-message.entity';
@@ -55,6 +65,12 @@ export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWor
           throw new WagerReservationConflictError('EXTERNAL_TRANSACTION');
         }
       }
+      if (
+        error instanceof ConnectionException || error instanceof DeadlockException ||
+        error instanceof LockWaitTimeoutException
+      ) {
+        throw new TransientInfrastructureError();
+      }
       throw error;
     }
   }
@@ -76,6 +92,24 @@ export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWor
     );
     this.em.persist(this.wagerEntity);
     await this.em.flush();
+  }
+
+  async receiveInbox(consumerName: string, messageId: string, payloadHash: string): Promise<boolean> {
+    const rows = await this.em.getConnection().execute<Array<{ payload_hash: string }>>(
+      `INSERT INTO inbox_messages (consumer_name, message_id, payload_hash, received_at, processed_at)
+       VALUES (?, ?, ?, current_timestamp, current_timestamp)
+       ON CONFLICT (consumer_name, message_id) DO NOTHING
+       RETURNING payload_hash`,
+      [consumerName, messageId, payloadHash],
+    );
+    if (rows.length > 0) return true;
+
+    const existing = await this.em.getConnection().execute<Array<{ payload_hash: string }>>(
+      'SELECT payload_hash FROM inbox_messages WHERE consumer_name = ? AND message_id = ?',
+      [consumerName, messageId],
+    );
+    if (existing[0]?.payload_hash !== payloadHash) throw new InboxMessageConflictError();
+    return false;
   }
 
   async lockWallet(walletId: string): Promise<Wallet | undefined> {

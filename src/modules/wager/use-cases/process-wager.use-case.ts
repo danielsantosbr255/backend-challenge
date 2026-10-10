@@ -9,6 +9,7 @@ import { createCanonicalWagerHash } from '../wager.utils';
 import {
   WAGER_REPOSITORY,
   type StoredWagerResult,
+  type WagerIngressContext,
   type WagerRepositoryInterface,
 } from '../wager.interface';
 import {
@@ -31,7 +32,7 @@ export class ProcessWagerUseCase {
     private readonly repository: WagerRepositoryInterface,
   ) {}
 
-  async execute(input: ProcessWagerInputDto): Promise<ProcessWagerResponseDto> {
+  async execute(input: ProcessWagerInputDto, ingress?: WagerIngressContext): Promise<ProcessWagerResponseDto> {
     if (!input.money.isPositive()) {
       throw new InvalidWagerAmountError();
     }
@@ -52,6 +53,15 @@ export class ProcessWagerUseCase {
 
     try {
       return await this.repository.transaction(async (tx) => {
+        if (ingress !== undefined) {
+          const received = await tx.receiveInbox(ingress.consumerName, ingress.messageId, payloadHash);
+          if (!received) {
+            const existing = await tx.findByIdempotency(input.providerId, input.idempotencyKey);
+            if (existing === undefined) throw new InvalidWagerProcessingStateError();
+            return replayOrConflict(existing, payloadHash);
+          }
+        }
+
         const existing = await tx.findByIdempotency(input.providerId, input.idempotencyKey);
         if (existing !== undefined) {
           return replayOrConflict(existing, payloadHash);

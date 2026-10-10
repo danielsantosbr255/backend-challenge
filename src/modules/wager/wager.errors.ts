@@ -2,6 +2,27 @@ import { ApplicationError } from '@/common/errors/application.error';
 
 export type WagerReservationConflict = 'IDEMPOTENCY' | 'EXTERNAL_TRANSACTION';
 
+const TERMINAL_WAGER_ERROR_CODES = new Set([
+  'WAGER_EXTERNAL_TRANSACTION_CONFLICT',
+  'WAGER_IDEMPOTENCY_CONFLICT',
+  'WAGER_WALLET_NOT_FOUND',
+  'WAGER_WALLET_MISMATCH',
+  'INSUFFICIENT_FUNDS',
+  'WAGER_REFERENCE_MISMATCH',
+  'CURRENCY_MISMATCH',
+]);
+
+export function isTerminalWagerError(error: unknown): error is ApplicationError {
+  return error instanceof ApplicationError && TERMINAL_WAGER_ERROR_CODES.has(error.code);
+}
+
+export class InboxMessageConflictError extends ApplicationError {
+  constructor() {
+    super('INBOX_MESSAGE_CONFLICT', 'Message ID was received with a different payload');
+    this.name = 'InboxMessageConflictError';
+  }
+}
+
 export class WagerReservationConflictError extends ApplicationError {
   constructor(public readonly conflict: WagerReservationConflict) {
     super('WAGER_RESERVATION_CONFLICT', `Wager reservation conflict: ${conflict}`);

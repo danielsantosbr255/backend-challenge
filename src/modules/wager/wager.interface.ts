@@ -28,6 +28,7 @@ export interface WagerReference {
 }
 
 export interface WagerUnitOfWork {
+  receiveInbox(consumerName: string, messageId: string, payloadHash: string): Promise<boolean>;
   findByIdempotency(providerId: string, idempotencyKey: string): Promise<StoredWagerResult | undefined>;
   walletExists(walletId: string): Promise<boolean>;
   reserve(transaction: WagerTransaction): Promise<void>;
@@ -39,6 +40,11 @@ export interface WagerUnitOfWork {
     ledgerEntry: WalletLedgerEntry | undefined,
     balance: { amount: string; currency: string },
   ): Promise<void>;
+}
+
+export interface WagerIngressContext {
+  consumerName: string;
+  messageId: string;
 }
 
 export interface WagerRepositoryInterface {

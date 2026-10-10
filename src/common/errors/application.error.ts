@@ -19,7 +19,9 @@ export type ApplicationErrorCode =
   | 'INVALID_WAGER_TRANSACTION_STATE'
   | 'INVALID_PERSISTED_WAGER_RESULT'
   | 'INVALID_WAGER_PROCESSING_STATE'
-  | 'INVALID_WAGER_UNIT_OF_WORK_STATE';
+  | 'INVALID_WAGER_UNIT_OF_WORK_STATE'
+  | 'INBOX_MESSAGE_CONFLICT'
+  | 'TRANSIENT_INFRASTRUCTURE_FAILURE';
 
 export abstract class ApplicationError extends Error {
   protected constructor(
