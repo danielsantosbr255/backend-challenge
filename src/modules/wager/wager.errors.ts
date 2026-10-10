@@ -9,6 +9,8 @@ const TERMINAL_WAGER_ERROR_CODES = new Set([
   'WAGER_WALLET_MISMATCH',
   'INSUFFICIENT_FUNDS',
   'WAGER_REFERENCE_MISMATCH',
+  'WAGER_ALREADY_REVERSED',
+  'REVERSAL_INSUFFICIENT_FUNDS',
   'CURRENCY_MISMATCH',
 ]);
 
@@ -51,6 +53,13 @@ export class WagerWalletNotFoundError extends ApplicationError {
   }
 }
 
+export class WagerTransactionNotFoundError extends ApplicationError {
+  constructor() {
+    super('WAGER_TRANSACTION_NOT_FOUND', 'Wager transaction was not found');
+    this.name = 'WagerTransactionNotFoundError';
+  }
+}
+
 export class WagerWalletMismatchError extends ApplicationError {
   constructor() {
     super('WAGER_WALLET_MISMATCH', 'Wallet does not match the supplied player or currency');
@@ -76,6 +85,13 @@ export class WagerReferenceMismatchError extends ApplicationError {
   constructor() {
     super('WAGER_REFERENCE_MISMATCH', 'Referenced wager transaction does not match this wager');
     this.name = 'WagerReferenceMismatchError';
+  }
+}
+
+export class WagerAlreadyReversedError extends ApplicationError {
+  constructor() {
+    super('WAGER_ALREADY_REVERSED', 'Referenced transaction was already reversed by this operation type');
+    this.name = 'WagerAlreadyReversedError';
   }
 }
 

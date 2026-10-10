@@ -10,21 +10,34 @@ export interface StoredWagerResult {
   externalTransactionId: string;
   idempotencyKey: string;
   payloadHash: string;
-  status: 'PROCESSED' | 'REJECTED';
+  status: 'PROCESSED' | 'REJECTED' | 'PENDING_REFERENCE' | 'FAILED';
   failureCode: string | undefined;
   responseBalance: { amount: string; currency: string };
 }
 
-export interface WagerReference {
-  id: string;
+export interface PendingReferenceClaim {
+  transaction: WagerTransaction;
+  attempts: number;
+}
+
+export interface PendingReferenceRetry {
+  attempts: number;
+  nextAttemptAt: Date;
+}
+
+export interface WagerTransactionQuery {
+  transactionId: string;
   providerId: string;
   externalTransactionId: string;
-  playerId: string;
   walletId: string;
-  roundId: string;
   kind: string;
   status: string;
-  currency: string;
+  money: { amount: string; currency: string };
+  referenceExternalTransactionId?: string;
+  failureCode?: string;
+  responseBalance?: { amount: string; currency: string };
+  createdAt: Date;
+  processedAt?: Date;
 }
 
 export interface WagerUnitOfWork {
@@ -33,12 +46,16 @@ export interface WagerUnitOfWork {
   walletExists(walletId: string): Promise<boolean>;
   reserve(transaction: WagerTransaction): Promise<void>;
   lockWallet(walletId: string): Promise<Wallet | undefined>;
-  findReference(providerId: string, externalTransactionId: string): Promise<WagerReference | undefined>;
+  findReference(providerId: string, externalTransactionId: string): Promise<WagerTransaction | undefined>;
+  findProcessedReversal(referenceTransactionId: string, kind: 'REFUND' | 'ROLLBACK'): Promise<boolean>;
+  claimPendingReference(transactionId: string, now: Date): Promise<PendingReferenceClaim | undefined>;
+  schedulePendingReferenceRetry(transactionId: string, retry: PendingReferenceRetry): Promise<void>;
   persistResult(
     wallet: Wallet,
     transaction: WagerTransaction,
     ledgerEntry: WalletLedgerEntry | undefined,
     balance: { amount: string; currency: string },
+    pendingReferenceRetry?: PendingReferenceRetry,
   ): Promise<void>;
 }
 
@@ -50,4 +67,8 @@ export interface WagerIngressContext {
 export interface WagerRepositoryInterface {
   transaction<T>(work: (tx: WagerUnitOfWork) => Promise<T>): Promise<T>;
   findByIdempotency(providerId: string, idempotencyKey: string): Promise<StoredWagerResult | undefined>;
+  findDuePendingReferenceIds(now: Date, limit: number): Promise<string[]>;
+  findTransaction(transactionId: string): Promise<WagerTransactionQuery | undefined>;
+  findProviderTransaction(providerId: string, externalTransactionId: string): Promise<WagerTransactionQuery | undefined>;
+  persistFailure(transaction: WagerTransaction, balance: { amount: string; currency: string }): Promise<boolean>;
 }

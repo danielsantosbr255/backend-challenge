@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import 'reflect-metadata';
 import { parseWagerMessage } from '@/infrastructure/messaging/wager-message';
 
 describe('parseWagerMessage', () => {
@@ -35,6 +36,17 @@ describe('parseWagerMessage', () => {
     expect(parseWagerMessage(JSON.stringify({
       ...valid,
       data: { ...valid.data, money: { amount: '0.00', currency: 'BRL' } },
+    }))).toBeUndefined();
+  });
+
+  it('accepts reversal kinds only with their required external reference', () => {
+    expect(parseWagerMessage(JSON.stringify({
+      ...valid,
+      data: { ...valid.data, kind: 'REFUND', referenceExternalTransactionId: 'bet-1' },
+    }))).toBeDefined();
+    expect(parseWagerMessage(JSON.stringify({
+      ...valid,
+      data: { ...valid.data, kind: 'ROLLBACK' },
     }))).toBeUndefined();
   });
 });

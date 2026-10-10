@@ -206,7 +206,7 @@ export class WagerTransaction {
 
   markPendingReference(): void {
     this.assertCanTransition();
-    if (!requiresReference(this.kind)) {
+    if (!awaitsReference(this.kind, this._referenceExternalTransactionId)) {
       throw new InvalidWagerTransactionError(`${this.kind} does not require a reference transaction`);
     }
 
@@ -231,6 +231,34 @@ export class WagerTransaction {
 
   requiresReference(): boolean {
     return requiresReference(this.kind);
+  }
+
+  awaitsReference(): boolean {
+    return awaitsReference(this.kind, this._referenceExternalTransactionId);
+  }
+
+  isValidReferenceFor(reference: WagerTransaction): boolean {
+    return this.isCompatibleReference(reference) && reference.status === 'PROCESSED';
+  }
+
+  isCompatibleReference(reference: WagerTransaction): boolean {
+    if (
+      !this.awaitsReference() ||
+      this._referenceExternalTransactionId !== reference.externalTransactionId ||
+      reference.providerId !== this.providerId ||
+      reference.playerId !== this.playerId ||
+      reference.walletId !== this.walletId ||
+      reference.roundId !== this.roundId ||
+      reference.money.currency !== this.money.currency
+    ) {
+      return false;
+    }
+
+    if (this.kind === 'WIN') return reference.kind === 'BET';
+    if (!reference.money.equals(this.money)) return false;
+    return this.kind === 'REFUND'
+      ? reference.kind === 'BET'
+      : reference.kind === 'BET' || reference.kind === 'WIN' || reference.kind === 'REFUND';
   }
 
   matchesPayload(payloadHash: string): boolean {
@@ -276,6 +304,10 @@ export class WagerTransaction {
 
 function requiresReference(kind: WagerKind): boolean {
   return kind === 'REFUND' || kind === 'ROLLBACK';
+}
+
+function awaitsReference(kind: WagerKind, referenceExternalTransactionId: string | undefined): boolean {
+  return requiresReference(kind) || (kind === 'WIN' && referenceExternalTransactionId !== undefined);
 }
 
 function assertExternalKind(kind: WagerKind): asserts kind is ExternalWagerKind {

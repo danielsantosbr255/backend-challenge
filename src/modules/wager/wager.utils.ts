@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ExternalWagerKind } from './domain/wager-transaction';
 
 export interface CanonicalWagerData {
   providerId: string;
@@ -7,7 +8,7 @@ export interface CanonicalWagerData {
   walletId: string;
   roundId: string;
   gameId: string;
-  kind: 'BET' | 'WIN' | 'LOSS';
+  kind: ExternalWagerKind;
   money: { amount: string; currency: string };
   referenceExternalTransactionId?: string;
 }

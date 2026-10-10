@@ -1,10 +1,11 @@
 import type { InferEntity } from '@mikro-orm/core';
-import type { StoredWagerResult, WagerReference } from './wager.interface';
-import type { WagerTransaction } from './domain/wager-transaction';
+import type { PendingReferenceRetry, StoredWagerResult } from './wager.interface';
+import { WagerTransaction } from './domain/wager-transaction';
 import { OutboxMessageEntity } from './entities/outbox-message.entity';
 import { WagerTransactionEntity } from './entities/wager-transaction.entity';
 import { WalletEntity } from '@/modules/wallet/entities/wallet.entity';
 import { InvalidPersistedWagerResultError } from './wager.errors';
+import type { IntegrationEvent } from './domain/integration-event';
 
 type WagerOrmEntity = InferEntity<typeof WagerTransactionEntity>;
 type WalletOrmEntity = InferEntity<typeof WalletEntity>;
@@ -35,6 +36,8 @@ export function toWagerEntityData(
     processedAt: transaction.processedAt ?? null,
     responseBalanceAmount: responseBalance?.amount ?? null,
     responseBalanceCurrency: responseBalance?.currency ?? null,
+    referenceAttempts: 0,
+    referenceNextAttemptAt: null,
     createdAt: transaction.createdAt,
   } satisfies Partial<WagerOrmEntity>;
 }
@@ -43,6 +46,7 @@ export function toWagerResultEntityData(
   transaction: WagerTransaction,
   balance: { amount: string; currency: string },
   referenceTransaction: WagerOrmEntity | null,
+  pendingReferenceRetry?: PendingReferenceRetry,
 ) {
   return {
     status: transaction.status,
@@ -51,12 +55,14 @@ export function toWagerResultEntityData(
     referenceTransaction,
     responseBalanceAmount: balance.amount,
     responseBalanceCurrency: balance.currency,
+    referenceNextAttemptAt: pendingReferenceRetry?.nextAttemptAt ?? null,
+    ...(pendingReferenceRetry === undefined ? {} : { referenceAttempts: pendingReferenceRetry.attempts }),
   } satisfies Partial<WagerOrmEntity>;
 }
 
 export function toStoredWagerResult(entity: WagerOrmEntity): StoredWagerResult {
   if (
-    (entity.status !== 'PROCESSED' && entity.status !== 'REJECTED') ||
+    (entity.status !== 'PROCESSED' && entity.status !== 'REJECTED' && entity.status !== 'PENDING_REFERENCE' && entity.status !== 'FAILED') ||
     entity.responseBalanceAmount === null ||
     entity.responseBalanceCurrency === null
   ) {
@@ -77,43 +83,36 @@ export function toStoredWagerResult(entity: WagerOrmEntity): StoredWagerResult {
   };
 }
 
-export function toWagerReference(entity: WagerOrmEntity): WagerReference {
-  return {
+export function toWagerDomain(entity: WagerOrmEntity): WagerTransaction {
+  return WagerTransaction.rehydrate({
     id: entity.id,
     providerId: entity.providerId,
     externalTransactionId: entity.externalTransactionId,
-    playerId: entity.playerId,
+    idempotencyKey: entity.idempotencyKey,
+    payloadHash: entity.payloadHash,
     walletId: entity.wallet.id,
+    playerId: entity.playerId,
     roundId: entity.roundId,
+    gameId: entity.gameId,
     kind: entity.kind,
+    money: { amount: entity.amount, currency: entity.currency },
+    ...(entity.referenceExternalTransactionId === null
+      ? {}
+      : { referenceExternalTransactionId: entity.referenceExternalTransactionId }),
+    createdAt: entity.createdAt,
     status: entity.status,
-    currency: entity.currency,
-  };
+    ...(entity.referenceTransaction === null ? {} : { referenceTransactionId: entity.referenceTransaction.id }),
+    ...(entity.failureCode === null ? {} : { failureCode: entity.failureCode }),
+    ...(entity.processedAt === null ? {} : { processedAt: entity.processedAt }),
+  });
 }
 
-export interface OutboxEventData {
-  eventId: string;
-  eventType: string;
-  aggregateId: string;
-  correlationId: string;
-  occurredAt: Date;
-  data: Record<string, unknown>;
-}
-
-export function toOutboxEntityData(event: OutboxEventData) {
+export function toOutboxEntityData(event: IntegrationEvent<Record<string, unknown>>) {
   return {
     id: event.eventId,
     aggregateId: event.aggregateId,
     eventType: event.eventType,
-    payload: {
-      eventId: event.eventId,
-      eventType: event.eventType,
-      aggregateId: event.aggregateId,
-      correlationId: event.correlationId,
-      occurredAt: event.occurredAt.toISOString(),
-      version: 1,
-      data: event.data,
-    },
+    payload: event.toJSON(),
     occurredAt: event.occurredAt,
     attempts: 0,
     nextAttemptAt: event.occurredAt,

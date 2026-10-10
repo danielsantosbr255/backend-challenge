@@ -25,6 +25,8 @@ export class WagerTransactionOrmEntity {
   declare processedAt: Date | null;
   declare responseBalanceAmount: string | null;
   declare responseBalanceCurrency: string | null;
+  declare referenceAttempts: number;
+  declare referenceNextAttemptAt: Date | null;
   declare createdAt: Date;
 }
 
@@ -52,6 +54,8 @@ export const WagerTransactionEntity = defineEntity({
     processedAt: p.datetime().fieldName('processed_at').columnType('timestamptz').nullable(),
     responseBalanceAmount: p.decimal('string').fieldName('response_balance_amount').precision(18).scale(2).nullable(),
     responseBalanceCurrency: p.string().fieldName('response_balance_currency').columnType('char(3)').nullable(),
+    referenceAttempts: p.integer().fieldName('reference_attempts').default(0),
+    referenceNextAttemptAt: p.datetime().fieldName('reference_next_attempt_at').columnType('timestamptz').nullable(),
     createdAt: p.datetime().fieldName('created_at').columnType('timestamptz').defaultRaw('current_timestamp'),
   },
   uniques: [
@@ -76,6 +80,11 @@ export const WagerTransactionEntity = defineEntity({
       name: 'wager_transactions_reference_external_idx',
       properties: ['providerId', 'referenceExternalTransactionId'],
       where: { referenceExternalTransactionId: { $ne: null } },
+    },
+    {
+      name: 'wager_transactions_pending_reference_idx',
+      properties: ['referenceNextAttemptAt', 'id'],
+      where: { status: 'PENDING_REFERENCE' },
     },
   ],
   checks: [
@@ -112,6 +121,13 @@ export const WagerTransactionEntity = defineEntity({
       expression: (columns) =>
         `${columns.status} <> 'PROCESSED' OR ${columns.kind} NOT IN ('REFUND', 'ROLLBACK') ` +
         `OR ${columns.referenceTransaction} IS NOT NULL`,
+    },
+    {
+      name: 'wager_transactions_reference_retry_check',
+      expression: (columns) =>
+        `${columns.referenceAttempts} >= 0 AND ` +
+        `((${columns.status} = 'PENDING_REFERENCE' AND ${columns.referenceNextAttemptAt} IS NOT NULL) OR ` +
+        `(${columns.status} <> 'PENDING_REFERENCE' AND ${columns.referenceNextAttemptAt} IS NULL))`,
     },
   ],
 });

@@ -7,6 +7,7 @@ import {
   type SQSClient,
 } from '@aws-sdk/client-sqs';
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { MetricsService } from '@/common/observability/metrics.service';
 import { ConfigService } from '@nestjs/config';
 import { delay, exponentialBackoffSeconds } from '@/common/async/retry';
 import { SQS_CLIENT } from '@/infrastructure/messaging/sqs-client.provider';
@@ -28,6 +29,7 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
     @Inject(SQS_CLIENT) private readonly sqs: SQSClient,
     private readonly config: ConfigService,
     private readonly processWager: ProcessWagerUseCase,
+    private readonly metrics: MetricsService,
   ) {
     this.queueUrl = this.config.getOrThrow<string>('SQS_QUEUE_URL');
     this.dlqUrl = this.config.getOrThrow<string>('SQS_DLQ_URL');
@@ -72,8 +74,12 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
 
   private async processMessage(message: Message): Promise<void> {
     if (message.ReceiptHandle === undefined) return;
-    let context: { messageId: string; providerId?: string; walletId?: string; transactionId?: string } = {
+    let context = {
       messageId: message.MessageId ?? 'unknown',
+      providerId: 'unknown',
+      walletId: 'unknown',
+      transactionId: 'unknown',
+      correlationId: 'unknown',
     };
     try {
       const parsed = parseWagerMessage(message.Body);
@@ -85,6 +91,8 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
         messageId: parsed.messageId,
         providerId: parsed.data.providerId,
         walletId: parsed.data.walletId,
+        transactionId: 'unknown',
+        correlationId: parsed.data.externalTransactionId,
       };
       const result = await this.processWager.execute(parsed.data, {
         consumerName: CONSUMER_NAME,
@@ -92,6 +100,10 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
       });
       context.transactionId = result.transactionId;
       this.logger.log(JSON.stringify({ event: 'wager_message_processed', ...context, status: result.status }));
+      if (result.status === 'FAILED') {
+        await this.moveToDlq(message);
+        return;
+      }
       await this.ack(message.ReceiptHandle);
     } catch (error: unknown) {
       if (isTerminalWagerError(error)) {
@@ -107,6 +119,7 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
         ...context,
         errorType: error instanceof Error ? error.name : 'UnknownError',
       }));
+      this.metrics.recordRetry('sqs');
       await this.defer(message);
     }
   }
@@ -138,6 +151,15 @@ export class WagerSqsConsumer implements OnModuleInit, OnModuleDestroy {
       MessageBody: message.Body,
       MessageGroupId: 'invalid-wager-message',
       MessageDeduplicationId: message.MessageId ?? message.ReceiptHandle,
+    }));
+    this.metrics.recordDlqMessage();
+    this.logger.warn(JSON.stringify({
+      event: 'wager_message_moved_to_dlq',
+      messageId: message.MessageId ?? 'unknown',
+      correlationId: 'unknown',
+      transactionId: 'unknown',
+      walletId: 'unknown',
+      providerId: 'unknown',
     }));
     await this.ack(message.ReceiptHandle);
   }

@@ -1,12 +1,12 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { Money } from '@/modules/wallet/domain/money';
-import type { ProcessWagerInputDto } from '@/modules/wager/dtos/process-wager.dto';
+import type { ProcessWagerInput } from '@/modules/wager/use-cases/process-wager.input';
 import { WagerTransactionRequestedDto } from '@/modules/wager/dtos/wager-transaction-requested.dto';
 
 export interface WagerTransactionRequested {
   messageId: string;
-  data: ProcessWagerInputDto;
+  data: ProcessWagerInput;
 }
 
 export function parseWagerMessage(body: string | undefined): WagerTransactionRequested | undefined {
@@ -14,7 +14,7 @@ export function parseWagerMessage(body: string | undefined): WagerTransactionReq
 
   let json: unknown;
   try {
-    json = JSON.parse(body) as unknown;
+    json = JSON.parse(body);
   } catch {
     return undefined;
   }

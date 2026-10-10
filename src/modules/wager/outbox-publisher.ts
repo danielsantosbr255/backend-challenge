@@ -4,6 +4,7 @@ import {
 } from '@aws-sdk/client-sqs';
 import { EntityManager } from '@mikro-orm/core';
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { MetricsService } from '@/common/observability/metrics.service';
 import { ConfigService } from '@nestjs/config';
 import { v7 as uuidv7 } from 'uuid';
 import { delay, exponentialBackoffSeconds } from '@/common/async/retry';
@@ -28,6 +29,7 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
     @Inject(EntityManager) private readonly em: EntityManager,
     @Inject(SQS_CLIENT) private readonly sqs: SQSClient,
     config: ConfigService,
+    private readonly metrics: MetricsService,
   ) {
     this.queueUrl = config.getOrThrow<string>('SQS_EVENTS_QUEUE_URL');
   }
@@ -65,6 +67,11 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
   }
 
   private async claimBatch(): Promise<ClaimedOutboxMessage[]> {
+    const lag = await this.em.getConnection().execute<Array<{ lag_seconds: number | null }>>(
+      `SELECT EXTRACT(EPOCH FROM (current_timestamp - MIN(occurred_at)))::float8 AS lag_seconds
+       FROM outbox_messages WHERE published_at IS NULL`,
+    );
+    this.metrics.setOutboxLag(lag[0]?.lag_seconds ?? 0);
     return this.em.transactional(async (em) => em.getConnection().execute<ClaimedOutboxMessage[]>(
       `WITH candidates AS (
          SELECT id FROM outbox_messages
@@ -80,7 +87,7 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
        FROM candidates
        WHERE messages.id = candidates.id
        RETURNING messages.id, messages.aggregate_id, messages.payload, messages.attempts`,
-      [this.ownerId],
+      [this.ownerId], 'all', em.getTransactionContext(),
     ));
   }
 
@@ -99,6 +106,7 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
         [event.id, this.ownerId],
       );
     } catch (error: unknown) {
+      this.metrics.recordRetry('outbox');
       const retrySeconds = exponentialBackoffSeconds(event.attempts + 1, 300);
       await this.em.getConnection().execute(
         `UPDATE outbox_messages
@@ -109,10 +117,32 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
       );
       this.logger.error(JSON.stringify({
         event: 'outbox_publish_retry',
-        eventId: event.id,
-        aggregateId: event.aggregate_id,
+        ...outboxLogContext(event),
         errorType: error instanceof Error ? error.name : 'UnknownError',
       }));
     }
   }
+}
+
+function outboxLogContext(event: ClaimedOutboxMessage): {
+  messageId: string;
+  transactionId: string;
+  walletId: string;
+  providerId: string;
+  correlationId: string;
+} {
+  const data = event.payload['data'];
+  return {
+    messageId: event.id,
+    transactionId: readEventField(data, 'transactionId') ?? event.id,
+    walletId: event.aggregate_id,
+    providerId: readEventField(data, 'providerId') ?? 'unknown',
+    correlationId: readEventField(event.payload, 'correlationId') ?? 'unknown',
+  };
+}
+
+function readEventField(value: unknown, field: string): string | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const result = Reflect.get(value, field);
+  return typeof result === 'string' ? result : undefined;
 }

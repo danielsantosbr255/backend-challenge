@@ -18,11 +18,11 @@ describe('Health HTTP integration (PostgreSQL and LocalStack)', () => {
     const { AppModule } = await import('@/app.module');
     app = await NestFactory.create(AppModule, { logger: false });
     await app.listen(0, '127.0.0.1');
-  });
+  }, 30_000);
 
   afterAll(async () => {
     await app?.close();
-  });
+  }, 30_000);
 
   it('returns ready over HTTP when the configured database and queues are available', async () => {
     if (!app) {

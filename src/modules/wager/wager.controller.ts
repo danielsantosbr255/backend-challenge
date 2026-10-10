@@ -5,9 +5,10 @@ import { ProcessWagerUseCase } from './use-cases/process-wager.use-case';
 import {
   IDEMPOTENCY_KEY_PATTERN,
   ProcessWagerRequestDto,
-  type ProcessWagerResponseDto,
 } from './dtos/process-wager.dto';
+import type { ProcessWagerResponseDto } from './dtos/process-wager-response.dto';
 
+// Apply the external provider identity guard here if authentication is added.
 @Controller('wagering/transactions')
 export class WagerController {
   constructor(private readonly processWager: ProcessWagerUseCase) {}
@@ -37,7 +38,10 @@ export class WagerController {
         ? {}
         : { referenceExternalTransactionId: request.referenceExternalTransactionId }),
     });
-    response.status(result.status === 'REJECTED' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.OK);
+    if (result.status === 'REJECTED') response.status(HttpStatus.UNPROCESSABLE_ENTITY);
+    else if (result.status === 'PENDING_REFERENCE') response.status(HttpStatus.ACCEPTED);
+    else if (result.status === 'FAILED') response.status(HttpStatus.INTERNAL_SERVER_ERROR);
+    else response.status(HttpStatus.OK);
     return result;
   }
 }
