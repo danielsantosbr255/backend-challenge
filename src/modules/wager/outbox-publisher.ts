@@ -7,7 +7,8 @@ import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nest
 import { MetricsService } from '@/common/observability/metrics.service';
 import { ConfigService } from '@nestjs/config';
 import { v7 as uuidv7 } from 'uuid';
-import { delay, exponentialBackoffSeconds } from '@/common/async/retry';
+import { delay } from '@/common/async/retry';
+import { OutboxMessage } from './domain/outbox-message';
 import { SQS_CLIENT } from '@/infrastructure/messaging/sqs-client.provider';
 
 interface ClaimedOutboxMessage {
@@ -15,6 +16,9 @@ interface ClaimedOutboxMessage {
   aggregate_id: string;
   payload: Record<string, unknown>;
   attempts: number;
+  event_type: string;
+  occurred_at: Date;
+  next_attempt_at: Date;
 }
 
 @Injectable()
@@ -82,38 +86,46 @@ export class OutboxPublisher implements OnModuleInit, OnModuleDestroy {
          LIMIT 1
        )
        UPDATE outbox_messages AS messages
-       SET claimed_by = ?, claimed_until = current_timestamp + interval '60 seconds',
-           attempts = messages.attempts + 1
+       SET claimed_by = ?, claimed_until = current_timestamp + interval '60 seconds'
        FROM candidates
        WHERE messages.id = candidates.id
-       RETURNING messages.id, messages.aggregate_id, messages.payload, messages.attempts`,
+       RETURNING messages.id, messages.aggregate_id, messages.payload, messages.attempts,
+                 messages.event_type, messages.occurred_at, messages.next_attempt_at`,
       [this.ownerId], 'all', em.getTransactionContext(),
     ));
   }
 
   private async publish(event: ClaimedOutboxMessage): Promise<void> {
+    const persistedState = {
+      id: event.id, aggregateId: event.aggregate_id, eventType: event.event_type, payload: event.payload,
+      occurredAt: new Date(event.occurred_at), attempts: event.attempts, nextAttemptAt: new Date(event.next_attempt_at),
+    };
+    const message = OutboxMessage.rehydrate(persistedState);
     try {
       await this.sqs.send(new SendMessageCommand({
         QueueUrl: this.queueUrl,
-        MessageBody: JSON.stringify(event.payload),
-        MessageGroupId: event.aggregate_id,
-        MessageDeduplicationId: event.id,
+        MessageBody: JSON.stringify(message.payload),
+        MessageGroupId: message.aggregateId,
+        MessageDeduplicationId: message.id,
       }));
+      message.markPublished(new Date());
       await this.em.getConnection().execute(
         `UPDATE outbox_messages
-         SET published_at = current_timestamp, claimed_by = NULL, claimed_until = NULL
+         SET published_at = ?, attempts = ?, claimed_by = NULL, claimed_until = NULL
          WHERE id = ? AND claimed_by = ? AND published_at IS NULL`,
-        [event.id, this.ownerId],
+        [message.publishedAt, message.attempts, event.id, this.ownerId],
       );
     } catch (error: unknown) {
       this.metrics.recordRetry('outbox');
-      const retrySeconds = exponentialBackoffSeconds(event.attempts + 1, 300);
+      // Sending may have succeeded before recording publication failed. Retry from the persisted state.
+      const retry = OutboxMessage.rehydrate(persistedState);
+      retry.scheduleRetry(new Date());
       await this.em.getConnection().execute(
         `UPDATE outbox_messages
-         SET next_attempt_at = current_timestamp + (? * interval '1 second'),
+         SET next_attempt_at = ?, attempts = ?,
              claimed_by = NULL, claimed_until = NULL
          WHERE id = ? AND claimed_by = ? AND published_at IS NULL`,
-        [retrySeconds, event.id, this.ownerId],
+        [retry.nextAttemptAt, retry.attempts, event.id, this.ownerId],
       );
       this.logger.error(JSON.stringify({
         event: 'outbox_publish_retry',

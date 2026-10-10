@@ -6,6 +6,7 @@ import { WagerTransactionEntity } from './entities/wager-transaction.entity';
 import { WalletEntity } from '@/modules/wallet/entities/wallet.entity';
 import { InvalidPersistedWagerResultError } from './wager.errors';
 import type { IntegrationEvent } from './domain/integration-event';
+import { OutboxMessage } from './domain/outbox-message';
 
 type WagerOrmEntity = InferEntity<typeof WagerTransactionEntity>;
 type WalletOrmEntity = InferEntity<typeof WalletEntity>;
@@ -108,14 +109,15 @@ export function toWagerDomain(entity: WagerOrmEntity): WagerTransaction {
 }
 
 export function toOutboxEntityData(event: IntegrationEvent<Record<string, unknown>>) {
+  const message = OutboxMessage.enqueue(event);
   return {
-    id: event.eventId,
-    aggregateId: event.aggregateId,
-    eventType: event.eventType,
-    payload: event.toJSON(),
-    occurredAt: event.occurredAt,
-    attempts: 0,
-    nextAttemptAt: event.occurredAt,
+    id: message.id,
+    aggregateId: message.aggregateId,
+    eventType: message.eventType,
+    payload: message.payload,
+    occurredAt: message.occurredAt,
+    attempts: message.attempts,
+    nextAttemptAt: message.nextAttemptAt,
     claimedBy: null,
     claimedUntil: null,
     publishedAt: null,

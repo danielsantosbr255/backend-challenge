@@ -436,6 +436,8 @@ describe('Wagering HTTP processing', () => {
     const replay = await useCase.execute(input, ingress);
     expect(first.idempotentReplay).toBe(false);
     expect(replay.idempotentReplay).toBe(true);
+    const changedTransportKey = await useCase.execute({ ...input, idempotencyKey: `${request.key}-changed` }, ingress);
+    expect(changedTransportKey).toEqual(replay);
 
     const rows = await testOrm.em.getConnection().execute<Array<{ inbox: number; ledger: number }>>(
       `SELECT

@@ -63,7 +63,9 @@ export class ProcessWagerUseCase {
         if (ingress !== undefined) {
           const received = await tx.receiveInbox(ingress.consumerName, ingress.messageId, payloadHash);
           if (!received) {
-            const existing = await tx.findByIdempotency(input.providerId, input.idempotencyKey);
+            const original = await tx.findReference(input.providerId, input.externalTransactionId);
+            const existing = original === undefined ? undefined
+              : await tx.findByIdempotency(original.providerId, original.idempotencyKey);
             if (existing === undefined) throw new InvalidWagerProcessingStateError();
             return replayOrConflict(existing, payloadHash);
           }

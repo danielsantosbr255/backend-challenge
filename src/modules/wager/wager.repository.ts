@@ -42,6 +42,7 @@ import {
   toWagerDomain,
 } from './wager.mappers';
 import { createWagerEvents } from './wager.events';
+import { InboxMessage } from './domain/inbox-message';
 
 @Injectable()
 export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWork {
@@ -119,20 +120,29 @@ export class WagerRepository implements WagerRepositoryInterface, WagerUnitOfWor
   }
 
   async receiveInbox(consumerName: string, messageId: string, payloadHash: string): Promise<boolean> {
+    const message = InboxMessage.receive({ consumerName, messageId, payloadHash, receivedAt: new Date() });
+    message.markProcessed(new Date());
     const rows = await this.em.getConnection().execute<Array<{ payload_hash: string }>>(
       `INSERT INTO inbox_messages (consumer_name, message_id, payload_hash, received_at, processed_at)
-       VALUES (?, ?, ?, current_timestamp, current_timestamp)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (consumer_name, message_id) DO NOTHING
        RETURNING payload_hash`,
-      [consumerName, messageId, payloadHash], 'all', this.em.getTransactionContext(),
+      [message.consumerName, message.messageId, message.payloadHash, message.receivedAt, message.processedAt],
+      'all', this.em.getTransactionContext(),
     );
     if (rows.length > 0) return true;
 
-    const existing = await this.em.getConnection().execute<Array<{ payload_hash: string }>>(
-      'SELECT payload_hash FROM inbox_messages WHERE consumer_name = ? AND message_id = ?',
+    const existing = await this.em.getConnection().execute<Array<{ payload_hash: string; received_at: Date; processed_at: Date | null }>>(
+      'SELECT payload_hash, received_at, processed_at FROM inbox_messages WHERE consumer_name = ? AND message_id = ?',
       [consumerName, messageId], 'all', this.em.getTransactionContext(),
     );
-    if (existing[0]?.payload_hash !== payloadHash) throw new InboxMessageConflictError();
+    const row = existing[0];
+    if (row === undefined) throw new InboxMessageConflictError();
+    const received = InboxMessage.rehydrate({
+      consumerName, messageId, payloadHash: row.payload_hash, receivedAt: new Date(row.received_at),
+      ...(row.processed_at === null ? {} : { processedAt: new Date(row.processed_at) }),
+    });
+    if (received.payloadHash !== payloadHash || !received.isProcessed()) throw new InboxMessageConflictError();
     return false;
   }
 
