@@ -1,4 +1,5 @@
-import { CurrencyMismatchError, Money, type MoneyProps } from './money';
+import { Money, type MoneyProps } from './money';
+import { CurrencyMismatchError, InvalidWalletLedgerEntryError } from '../wallet.errors';
 
 export type LedgerDirection = 'DEBIT' | 'CREDIT';
 
@@ -22,13 +23,6 @@ export interface WalletLedgerEntryState {
   balanceBefore: MoneyProps;
   balanceAfter: MoneyProps;
   createdAt: Date;
-}
-
-export class InvalidWalletLedgerEntryError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InvalidWalletLedgerEntryError';
-  }
 }
 
 export class WalletLedgerEntry {

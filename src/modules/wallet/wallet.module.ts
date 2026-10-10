@@ -1,20 +1,20 @@
 import { Module } from '@nestjs/common';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
-import { MikroOrmWalletCreationStore } from '@/infrastructure/persistence/mikro-orm-wallet-creation.store';
-import { WalletLedgerEntryEntity } from '@/infrastructure/persistence/entities/wallet-ledger-entry.entity';
-import { WalletEntity } from '@/infrastructure/persistence/entities/wallet.entity';
-import { WagerTransactionEntity } from '@/infrastructure/persistence/entities/wager-transaction.entity';
-import { CreateWalletUseCase } from './application/create-wallet.use-case';
-import { WALLET_CREATION_STORE } from './application/wallet-creation.store';
-import { WalletsController } from './http/wallets.controller';
+import { WalletLedgerEntryEntity } from './entities/wallet-ledger-entry.entity';
+import { WalletEntity } from './entities/wallet.entity';
+import { WagerTransactionEntity } from '@/modules/wager/entities/wager-transaction.entity';
+import { CreateWalletUseCase } from './use-cases/create-wallet.use-case';
+import { WALLET_REPOSITORY } from './wallet.interface';
+import { WalletRepository } from './wallet.repository';
+import { WalletController } from './wallet.controller';
 
 @Module({
   imports: [MikroOrmModule.forFeature([WalletEntity, WagerTransactionEntity, WalletLedgerEntryEntity])],
-  controllers: [WalletsController],
+  controllers: [WalletController],
   providers: [
     CreateWalletUseCase,
-    MikroOrmWalletCreationStore,
-    { provide: WALLET_CREATION_STORE, useExisting: MikroOrmWalletCreationStore },
+    WalletRepository,
+    { provide: WALLET_REPOSITORY, useExisting: WalletRepository },
   ],
 })
 export class WalletModule {}

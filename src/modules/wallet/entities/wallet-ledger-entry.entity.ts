@@ -1,6 +1,6 @@
 import { defineEntity, p } from '@mikro-orm/postgresql';
 import { WalletEntity } from './wallet.entity';
-import { WagerTransactionEntity } from './wager-transaction.entity';
+import { WagerTransactionEntity } from '@/modules/wager/entities/wager-transaction.entity';
 
 export type LedgerDirection = 'CREDIT' | 'DEBIT';
 

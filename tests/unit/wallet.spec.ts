@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import { CurrencyMismatchError, Money } from '@/modules/wallet/domain/money';
-import { InsufficientFundsError, Wallet } from '@/modules/wallet/domain/wallet';
+import { Money } from '@/modules/wallet/domain/money';
+import { Wallet } from '@/modules/wallet/domain/wallet';
+import { CurrencyMismatchError, InsufficientFundsError } from '@/modules/wallet/wallet.errors';
 
 describe('Wallet', () => {
   it('opens with the initial balance and version one', () => {

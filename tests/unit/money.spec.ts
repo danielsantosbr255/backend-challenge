@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { CurrencyMismatchError, InvalidMoneyError, Money } from '@/modules/wallet/domain/money';
+import { Money } from '@/modules/wallet/domain/money';
+import { CurrencyMismatchError, InvalidMoneyError } from '@/modules/wallet/wallet.errors';
 
 describe('Money', () => {
   it('adds decimal amounts exactly and serializes with two decimal places', () => {
@@ -20,6 +21,13 @@ describe('Money', () => {
 
   it('does not consider zero a positive amount', () => {
     expect(Money.zero('BRL').isPositive()).toBe(false);
+  });
+
+  it('cannot be mutated at runtime', () => {
+    const money = Money.from({ amount: '1.00', currency: 'BRL' });
+
+    expect(Reflect.set(money, 'currency', 'USD')).toBe(false);
+    expect(money.toJSON()).toEqual({ amount: '1.00', currency: 'BRL' });
   });
 
   it('rejects invalid, non-finite, scientific, negative, and over-scale input amounts', () => {

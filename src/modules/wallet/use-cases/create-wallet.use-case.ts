@@ -3,22 +3,18 @@ import { v7 as uuidv7 } from 'uuid';
 import { Money } from '../domain/money';
 import { Wallet } from '../domain/wallet';
 import { WalletLedgerEntry } from '../domain/wallet-ledger-entry';
-import { WagerTransaction } from '@/modules/wagering/domain/wager-transaction';
-import { WALLET_CREATION_STORE, type WalletCreationStore } from './wallet-creation.store';
-
-export interface CreateWalletInput {
-  playerId: string;
-  initialBalance: Money;
-}
+import { WagerTransaction } from '@/modules/wager/domain/wager-transaction';
+import { WALLET_REPOSITORY, type WalletRepositoryInterface } from '../wallet.interface';
+import type { CreateWalletInputDto } from '../dtos/create-wallet.dto';
 
 @Injectable()
 export class CreateWalletUseCase {
   constructor(
-    @Inject(WALLET_CREATION_STORE)
-    private readonly store: WalletCreationStore,
+    @Inject(WALLET_REPOSITORY)
+    private readonly walletRepository: WalletRepositoryInterface,
   ) {}
 
-  async execute(input: CreateWalletInput): Promise<Wallet> {
+  async execute(input: CreateWalletInputDto): Promise<Wallet> {
     const openedAt = new Date();
     const wallet = Wallet.open({
       id: uuidv7(),
@@ -28,7 +24,7 @@ export class CreateWalletUseCase {
     });
 
     if (!wallet.balance.isPositive()) {
-      await this.store.persistNewWallet(wallet);
+      await this.walletRepository.persistNewWallet(wallet);
       return wallet;
     }
 
@@ -50,7 +46,7 @@ export class CreateWalletUseCase {
       createdAt: openedAt,
     });
 
-    await this.store.persistNewWallet(wallet, {
+    await this.walletRepository.persistNewWallet(wallet, {
       transaction: openingTransaction,
       ledgerEntry: openingLedgerEntry,
     });

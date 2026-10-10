@@ -1,11 +1,11 @@
 import { defineEntity, p } from '@mikro-orm/postgresql';
-import { WalletEntity } from './wallet.entity';
+import { WalletEntity } from '@/modules/wallet/entities/wallet.entity';
 import type { InferEntity } from '@mikro-orm/core';
 
 export type WagerKind = 'OPENING' | 'BET' | 'WIN' | 'LOSS' | 'REFUND' | 'ROLLBACK';
 export type WagerStatus = 'PENDING' | 'PENDING_REFERENCE' | 'PROCESSED' | 'REJECTED' | 'FAILED';
 
-export class WagerTransaction {
+export class WagerTransactionOrmEntity {
   declare id: string;
   declare providerId: string;
   declare externalTransactionId: string;
@@ -19,7 +19,7 @@ export class WagerTransaction {
   declare amount: string;
   declare currency: string;
   declare referenceExternalTransactionId: string | null;
-  declare referenceTransaction: WagerTransaction | null;
+  declare referenceTransaction: WagerTransactionOrmEntity | null;
   declare status: WagerStatus;
   declare failureCode: string | null;
   declare processedAt: Date | null;
@@ -30,7 +30,7 @@ export class WagerTransaction {
 
 export const WagerTransactionEntity = defineEntity({
   name: 'WagerTransaction',
-  class: WagerTransaction,
+  class: WagerTransactionOrmEntity,
   tableName: 'wager_transactions',
   properties: {
     id: p.uuid().primary(),
@@ -46,7 +46,7 @@ export const WagerTransactionEntity = defineEntity({
     amount: p.decimal('string').precision(18).scale(2),
     currency: p.string().columnType('char(3)'),
     referenceExternalTransactionId: p.string().fieldName('reference_external_transaction_id').length(255).nullable(),
-    referenceTransaction: () => p.manyToOne(WagerTransaction).fieldName('reference_transaction_id').deleteRule('restrict').nullable(),
+    referenceTransaction: () => p.manyToOne(WagerTransactionOrmEntity).fieldName('reference_transaction_id').deleteRule('restrict').nullable(),
     status: p.string().$type<WagerStatus>().length(24),
     failureCode: p.string().fieldName('failure_code').length(64).nullable(),
     processedAt: p.datetime().fieldName('processed_at').columnType('timestamptz').nullable(),

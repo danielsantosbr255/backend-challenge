@@ -1,4 +1,5 @@
-import { CurrencyMismatchError, Money, type MoneyProps } from './money';
+import { CurrencyMismatchError, InvalidWalletError, InsufficientFundsError, InvalidWalletMovementError } from '../wallet.errors';
+import { Money, type MoneyProps } from './money';
 
 export interface WalletProps {
   id: string;
@@ -22,27 +23,6 @@ export interface BalanceChange {
   balanceAfter: Money;
   version: number;
   changed: boolean;
-}
-
-export class InvalidWalletError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InvalidWalletError';
-  }
-}
-
-export class InsufficientFundsError extends Error {
-  constructor() {
-    super('Wallet balance is insufficient');
-    this.name = 'InsufficientFundsError';
-  }
-}
-
-export class InvalidWalletMovementError extends Error {
-  constructor() {
-    super('Wallet movements require a non-negative amount');
-    this.name = 'InvalidWalletMovementError';
-  }
 }
 
 export class Wallet {

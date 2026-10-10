@@ -3,14 +3,15 @@ import { MikroORM } from '@mikro-orm/core';
 import { Migrator } from '@mikro-orm/migrations';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { Module, ValidationPipe, type INestApplication } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
+import { APP_FILTER, NestFactory } from '@nestjs/core';
+import { GlobalHttpExceptionFilter } from '@/infrastructure/http/global-http-exception.filter';
 import { WalletModule } from '@/modules/wallet/wallet.module';
 import { mikroOrmConfig } from '@/infrastructure/persistence/mikro-orm.config';
-import { InboxMessageEntity } from '@/infrastructure/persistence/entities/inbox-message.entity';
-import { OutboxMessageEntity } from '@/infrastructure/persistence/entities/outbox-message.entity';
-import { WalletLedgerEntryEntity } from '@/infrastructure/persistence/entities/wallet-ledger-entry.entity';
-import { WalletEntity } from '@/infrastructure/persistence/entities/wallet.entity';
-import { WagerTransactionEntity } from '@/infrastructure/persistence/entities/wager-transaction.entity';
+import { InboxMessageEntity } from '@/modules/wager/entities/inbox-message.entity';
+import { OutboxMessageEntity } from '@/modules/wager/entities/outbox-message.entity';
+import { WalletLedgerEntryEntity } from '@/modules/wallet/entities/wallet-ledger-entry.entity';
+import { WalletEntity } from '@/modules/wallet/entities/wallet.entity';
+import { WagerTransactionEntity } from '@/modules/wager/entities/wager-transaction.entity';
 
 let testOrm: MikroORM;
 let testApp: INestApplication;
@@ -24,6 +25,7 @@ let testBaseUrl: string;
     }),
     WalletModule,
   ],
+  providers: [{ provide: APP_FILTER, useClass: GlobalHttpExceptionFilter }],
 })
 class PersistenceTestModule {}
 
@@ -164,9 +166,11 @@ describe('PostgreSQL financial schema migrations', () => {
     };
     const firstResponse = await fetch(`${testBaseUrl}/wallets`, requestOptions);
     const secondResponse = await fetch(`${testBaseUrl}/wallets`, requestOptions);
+    const secondBody: unknown = await secondResponse.json();
 
     expect(firstResponse.status).toBe(201);
     expect(secondResponse.status).toBe(409);
+    expect(isJsonObject(secondBody) ? secondBody['code'] : undefined).toBe('WALLET_ALREADY_EXISTS');
   });
 
   it('rolls back wallet and opening transaction when ledger persistence fails', async () => {

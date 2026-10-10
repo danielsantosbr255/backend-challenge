@@ -1,10 +1,10 @@
 import { defineConfig, type Options } from '@mikro-orm/postgresql';
 import { databaseEnvSchema } from '../config/env.schema';
-import { InboxMessageEntity } from './entities/inbox-message.entity';
-import { OutboxMessageEntity } from './entities/outbox-message.entity';
-import { WalletLedgerEntryEntity } from './entities/wallet-ledger-entry.entity';
-import { WalletEntity } from './entities/wallet.entity';
-import { WagerTransactionEntity } from './entities/wager-transaction.entity';
+import { InboxMessageEntity } from '@/modules/wager/entities/inbox-message.entity';
+import { OutboxMessageEntity } from '@/modules/wager/entities/outbox-message.entity';
+import { WalletLedgerEntryEntity } from '@/modules/wallet/entities/wallet-ledger-entry.entity';
+import { WalletEntity } from '@/modules/wallet/entities/wallet.entity';
+import { WagerTransactionEntity } from '@/modules/wager/entities/wager-transaction.entity';
 
 const env = databaseEnvSchema.parse(process.env);
 

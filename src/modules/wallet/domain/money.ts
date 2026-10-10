@@ -1,22 +1,9 @@
 import Decimal from 'decimal.js';
+import { CurrencyMismatchError, InvalidMoneyError } from '../wallet.errors';
 
 export interface MoneyProps {
   amount: string;
   currency: string;
-}
-
-export class InvalidMoneyError extends Error {
-  constructor(message = 'Money must have a non-negative decimal amount with at most two decimal places and a three-letter currency code') {
-    super(message);
-    this.name = 'InvalidMoneyError';
-  }
-}
-
-export class CurrencyMismatchError extends Error {
-  constructor() {
-    super('Money operations require matching currencies');
-    this.name = 'CurrencyMismatchError';
-  }
 }
 
 const MAX_AMOUNT = new Decimal('9999999999999999.99');
@@ -27,7 +14,9 @@ export class Money {
   private constructor(
     private readonly value: Decimal,
     public readonly currency: string,
-  ) {}
+  ) {
+    Object.freeze(this);
+  }
 
   static from(props: MoneyProps): Money {
     if (

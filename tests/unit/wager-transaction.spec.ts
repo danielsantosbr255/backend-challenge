@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@/modules/wallet/domain/money';
 import {
-  InvalidWagerTransactionError,
-  InvalidWagerTransactionStateError,
   WagerTransaction,
   type CreateWagerTransactionProps,
-} from '@/modules/wagering/domain/wager-transaction';
+} from '@/modules/wager/domain/wager-transaction';
+import { InvalidWagerTransactionError, InvalidWagerTransactionStateError } from '@/modules/wager/wager.errors';
 
 describe('WagerTransaction', () => {
   it('creates a pending wager and identifies balance effects by kind', () => {

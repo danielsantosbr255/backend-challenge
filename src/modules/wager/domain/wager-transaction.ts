@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Money, type MoneyProps } from '@/modules/wallet/domain/money';
 import type { LedgerDirection } from '@/modules/wallet/domain/wallet-ledger-entry';
+import { InvalidWagerTransactionError, InvalidWagerTransactionStateError } from '../wager.errors';
 
 export type WagerKind = 'OPENING' | 'BET' | 'WIN' | 'LOSS' | 'REFUND' | 'ROLLBACK';
 export type WagerStatus = 'PENDING' | 'PENDING_REFERENCE' | 'PROCESSED' | 'REJECTED' | 'FAILED';
@@ -48,20 +49,6 @@ export interface WagerTransactionState {
   referenceTransactionId?: string;
   failureCode?: string;
   processedAt?: Date;
-}
-
-export class InvalidWagerTransactionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InvalidWagerTransactionError';
-  }
-}
-
-export class InvalidWagerTransactionStateError extends Error {
-  constructor(status: WagerStatus) {
-    super(`Cannot change a wager transaction in ${status} state`);
-    this.name = 'InvalidWagerTransactionStateError';
-  }
 }
 
 export class WagerTransaction {
