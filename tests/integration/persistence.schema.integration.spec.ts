@@ -2,8 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { MikroORM } from '@mikro-orm/core';
 import { Migrator } from '@mikro-orm/migrations';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
-import { Module, type INestApplicationContext } from '@nestjs/common';
+import { Module, ValidationPipe, type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { WalletModule } from '@/modules/wallet/wallet.module';
 import { mikroOrmConfig } from '@/infrastructure/persistence/mikro-orm.config';
 import { InboxMessageEntity } from '@/infrastructure/persistence/entities/inbox-message.entity';
 import { OutboxMessageEntity } from '@/infrastructure/persistence/entities/outbox-message.entity';
@@ -12,7 +13,8 @@ import { WalletEntity } from '@/infrastructure/persistence/entities/wallet.entit
 import { WagerTransactionEntity } from '@/infrastructure/persistence/entities/wager-transaction.entity';
 
 let testOrm: MikroORM;
-let testApp: INestApplicationContext;
+let testApp: INestApplication;
+let testBaseUrl: string;
 
 @Module({
   imports: [
@@ -20,6 +22,7 @@ let testApp: INestApplicationContext;
       ...mikroOrmConfig,
       extensions: [Migrator],
     }),
+    WalletModule,
   ],
 })
 class PersistenceTestModule {}
@@ -28,21 +31,26 @@ describe('PostgreSQL financial schema migrations', () => {
   let migrationAppliedBySuite = false;
 
   beforeAll(async () => {
-    testApp = await NestFactory.createApplicationContext(PersistenceTestModule, { logger: false });
+    testApp = await NestFactory.create(PersistenceTestModule, { logger: false });
+    testApp.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
     testOrm = testApp.get(MikroORM);
     const existingTables = await testOrm.em.getConnection().execute<{ table_name: string | null }[]>(
       "SELECT to_regclass('public.wallets')::text AS table_name",
     );
     migrationAppliedBySuite = existingTables[0]?.table_name == null;
     await testOrm.migrator.up();
-  });
+    await testApp.listen(0, '127.0.0.1');
+    testBaseUrl = await testApp.getUrl();
+  }, 30_000);
 
   afterAll(async () => {
     if (migrationAppliedBySuite) {
       await testOrm.migrator.down();
     }
     await testApp.close();
-  });
+  }, 30_000);
 
   it('registers each financial table as a TypeScript MikroORM entity', async () => {
     expect(mikroOrmConfig.entities).toEqual(
@@ -84,6 +92,139 @@ describe('PostgreSQL financial schema migrations', () => {
       numeric_precision: 18,
       numeric_scale: 2,
     });
+  });
+
+  it('creates the wallet, opening transaction, and ledger entry through POST /wallets', async () => {
+    const playerId = crypto.randomUUID();
+    const response = await fetch(`${testBaseUrl}/wallets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId, initialBalance: { amount: '25.50', currency: 'BRL' } }),
+    });
+    const body: unknown = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(isJsonObject(body)).toBe(true);
+    if (!isJsonObject(body) || typeof body['id'] !== 'string') {
+      throw new Error('Create wallet response did not contain a wallet ID');
+    }
+    const walletId = body['id'];
+    expect(body).toMatchObject({
+      playerId,
+      balance: { amount: '25.50', currency: 'BRL' },
+      version: 1,
+    });
+
+    const counts = await testOrm.em.getConnection().execute<
+      { wallets: number; transactions: number; ledger_entries: number }[]
+    >(
+      `SELECT
+         (SELECT count(*)::int FROM wallets WHERE id = ?) AS wallets,
+         (SELECT count(*)::int FROM wager_transactions WHERE wallet_id = ?) AS transactions,
+         (SELECT count(*)::int FROM wallet_ledger_entries WHERE wallet_id = ?) AS ledger_entries`,
+      [walletId, walletId, walletId],
+    );
+    expect(counts[0]).toEqual({ wallets: 1, transactions: 1, ledger_entries: 1 });
+  });
+
+  it('creates no opening transaction or ledger entry when the initial balance is zero', async () => {
+    const playerId = crypto.randomUUID();
+    const response = await fetch(`${testBaseUrl}/wallets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId, initialBalance: { amount: '0.00', currency: 'USD' } }),
+    });
+    const body: unknown = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(isJsonObject(body)).toBe(true);
+    if (!isJsonObject(body) || typeof body['id'] !== 'string') {
+      throw new Error('Create wallet response did not contain a wallet ID');
+    }
+    expect(body['balance']).toEqual({ amount: '0.00', currency: 'USD' });
+
+    const counts = await testOrm.em.getConnection().execute<
+      { transactions: number; ledger_entries: number }[]
+    >(
+      `SELECT
+         (SELECT count(*)::int FROM wager_transactions WHERE wallet_id = ?) AS transactions,
+         (SELECT count(*)::int FROM wallet_ledger_entries WHERE wallet_id = ?) AS ledger_entries`,
+      [body['id'], body['id']],
+    );
+    expect(counts[0]).toEqual({ transactions: 0, ledger_entries: 0 });
+  });
+
+  it('returns 409 for a duplicate player and currency wallet', async () => {
+    const playerId = crypto.randomUUID();
+    const payload = JSON.stringify({ playerId, initialBalance: { amount: '0.00', currency: 'BRL' } });
+    const requestOptions: RequestInit = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: payload,
+    };
+    const firstResponse = await fetch(`${testBaseUrl}/wallets`, requestOptions);
+    const secondResponse = await fetch(`${testBaseUrl}/wallets`, requestOptions);
+
+    expect(firstResponse.status).toBe(201);
+    expect(secondResponse.status).toBe(409);
+  });
+
+  it('rolls back wallet and opening transaction when ledger persistence fails', async () => {
+    const playerId = crypto.randomUUID();
+    const connection = testOrm.em.getConnection();
+    await connection.execute(
+      `CREATE FUNCTION test_reject_wallet_opening_ledger() RETURNS trigger AS $$
+       BEGIN
+         RAISE EXCEPTION 'forced ledger failure for atomicity test';
+       END;
+       $$ LANGUAGE plpgsql`,
+    );
+    await connection.execute(
+      `CREATE TRIGGER test_reject_wallet_opening_ledger
+       BEFORE INSERT ON wallet_ledger_entries
+       FOR EACH ROW EXECUTE FUNCTION test_reject_wallet_opening_ledger()`,
+    );
+
+    try {
+      const response = await fetch(`${testBaseUrl}/wallets`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId, initialBalance: { amount: '13.37', currency: 'BRL' } }),
+      });
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain('forced ledger failure');
+    } finally {
+      await connection.execute('DROP TRIGGER test_reject_wallet_opening_ledger ON wallet_ledger_entries');
+      await connection.execute('DROP FUNCTION test_reject_wallet_opening_ledger()');
+    }
+
+    const counts = await connection.execute<
+      { wallets: number; transactions: number; ledger_entries: number }[]
+    >(
+      `SELECT
+         count(DISTINCT wallets.id)::int AS wallets,
+         count(DISTINCT wager_transactions.id)::int AS transactions,
+         count(DISTINCT wallet_ledger_entries.id)::int AS ledger_entries
+       FROM (SELECT ?::uuid AS player_id) AS input
+       LEFT JOIN wallets ON wallets.player_id = input.player_id
+       LEFT JOIN wager_transactions ON wager_transactions.wallet_id = wallets.id
+       LEFT JOIN wallet_ledger_entries ON wallet_ledger_entries.wallet_id = wallets.id`,
+      [playerId],
+    );
+    expect(counts[0]).toEqual({ wallets: 0, transactions: 0, ledger_entries: 0 });
+  });
+
+  it('rejects malformed money at the HTTP boundary', async () => {
+    const response = await fetch(`${testBaseUrl}/wallets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        playerId: crypto.randomUUID(),
+        initialBalance: { amount: '1.005', currency: 'BRL' },
+      }),
+    });
+
+    expect(response.status).toBe(400);
   });
 
   it('rejects duplicate player and currency wallets and negative balances', async () => {
@@ -315,4 +456,8 @@ async function insertTransaction(
       values.status,
     ],
   );
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
