@@ -21,11 +21,7 @@ export const WalletLedgerEntryEntity = defineEntity({
   indexes: [
     {
       name: 'wallet_ledger_entries_wallet_created_idx',
-      columns: [
-        { name: 'wallet', sort: 'ASC' },
-        { name: 'createdAt', sort: 'DESC' },
-        { name: 'id', sort: 'DESC' },
-      ],
+      expression: 'create index "wallet_ledger_entries_wallet_created_idx" on "wallet_ledger_entries" ("wallet_id", "created_at" DESC, "id" DESC)',
     },
   ],
   checks: [

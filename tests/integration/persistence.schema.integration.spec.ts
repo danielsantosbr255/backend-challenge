@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { MikroORM } from '@mikro-orm/core';
+import { Client } from 'pg';
 import { Migrator } from '@mikro-orm/migrations';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { Module, ValidationPipe, type INestApplication } from '@nestjs/common';
@@ -16,12 +17,17 @@ import { WagerTransactionEntity } from '@/modules/wager/entities/wager-transacti
 let testOrm: MikroORM;
 let testApp: INestApplication;
 let testBaseUrl: string;
+const testDatabaseName = `schema_test_${crypto.randomUUID().replaceAll('-', '')}`;
+let adminClient: Client;
+let databaseCreated = false;
 
 @Module({
   imports: [
     MikroOrmModule.forRoot({
       ...mikroOrmConfig,
+      dbName: testDatabaseName,
       extensions: [Migrator],
+      migrations: { ...mikroOrmConfig.migrations, snapshot: false },
     }),
     WalletModule,
   ],
@@ -33,6 +39,11 @@ describe('PostgreSQL financial schema migrations', () => {
   let migrationAppliedBySuite = false;
 
   beforeAll(async () => {
+    adminClient = new Client({ host: mikroOrmConfig.host, port: mikroOrmConfig.port,
+      user: mikroOrmConfig.user, password: mikroOrmConfig.password, database: mikroOrmConfig.dbName });
+    await adminClient.connect();
+    await adminClient.query(`CREATE DATABASE ${testDatabaseName}`);
+    databaseCreated = true;
     testApp = await NestFactory.create(PersistenceTestModule, { logger: false });
     testApp.useGlobalPipes(
       new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
@@ -49,9 +60,11 @@ describe('PostgreSQL financial schema migrations', () => {
 
   afterAll(async () => {
     if (migrationAppliedBySuite) {
-      await testOrm.migrator.down();
+      await testOrm.migrator.down({ to: 0 });
     }
-    await testApp.close();
+    await testApp?.close();
+    if (databaseCreated) await adminClient.query(`DROP DATABASE ${testDatabaseName}`);
+    await adminClient?.end();
   }, 30_000);
 
   it('registers each financial table as a TypeScript MikroORM entity', async () => {
@@ -94,6 +107,16 @@ describe('PostgreSQL financial schema migrations', () => {
       numeric_precision: 18,
       numeric_scale: 2,
     });
+  });
+
+  it('has no schema differences after applying the versioned migrations', async () => {
+    expect(await testOrm.migrator.checkSchema()).toBe(false);
+    const indexes: Array<{ indexname: string; indexdef: string }> = await testOrm.em.getConnection().execute(
+      `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'
+       AND indexname IN ('wager_transactions_wallet_created_idx', 'wallet_ledger_entries_wallet_created_idx')`,
+    );
+    expect(indexes).toHaveLength(2);
+    for (const index of indexes) expect(index.indexdef).toContain('USING btree (wallet_id, created_at DESC, id DESC)');
   });
 
   it('creates the wallet, opening transaction, and ledger entry through POST /wallets', async () => {
@@ -383,7 +406,7 @@ describe('PostgreSQL financial schema migrations', () => {
       return;
     }
 
-    await testOrm.migrator.down();
+    await testOrm.migrator.down({ to: 0 });
     const tables = await testOrm.em.getConnection().execute<{ table_name: string | null }[]>(
       "SELECT to_regclass('public.wallets')::text AS table_name",
     );

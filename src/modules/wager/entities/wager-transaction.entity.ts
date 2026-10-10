@@ -70,11 +70,7 @@ export const WagerTransactionEntity = defineEntity({
   indexes: [
     {
       name: 'wager_transactions_wallet_created_idx',
-      columns: [
-        { name: 'wallet', sort: 'ASC' },
-        { name: 'createdAt', sort: 'DESC' },
-        { name: 'id', sort: 'DESC' },
-      ],
+      expression: 'create index "wager_transactions_wallet_created_idx" on "wager_transactions" ("wallet_id", "created_at" DESC, "id" DESC)',
     },
     {
       name: 'wager_transactions_reference_external_idx',
