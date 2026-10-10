@@ -1,7 +1,12 @@
-import { BadRequestException, Body, Controller, Headers, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { Money } from '@/modules/wallet/domain/money';
 import { ProcessWagerUseCase } from './use-cases/process-wager.use-case';
-import { ProcessWagerRequestDto, type ProcessWagerResponseDto } from './dtos/process-wager.dto';
+import {
+  IDEMPOTENCY_KEY_PATTERN,
+  ProcessWagerRequestDto,
+  type ProcessWagerResponseDto,
+} from './dtos/process-wager.dto';
 
 @Controller('wagering/transactions')
 export class WagerController {
@@ -12,12 +17,13 @@ export class WagerController {
   async process(
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() request: ProcessWagerRequestDto,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ProcessWagerResponseDto> {
-    if (idempotencyKey === undefined || idempotencyKey.trim().length === 0 || idempotencyKey.length > 255) {
+    if (idempotencyKey === undefined || !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
       throw new BadRequestException('A valid Idempotency-Key header is required');
     }
 
-    return this.processWager.execute({
+    const result = await this.processWager.execute({
       providerId: request.providerId,
       externalTransactionId: request.externalTransactionId,
       idempotencyKey,
@@ -31,5 +37,7 @@ export class WagerController {
         ? {}
         : { referenceExternalTransactionId: request.referenceExternalTransactionId }),
     });
+    response.status(result.status === 'REJECTED' ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.OK);
+    return result;
   }
 }

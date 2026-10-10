@@ -32,6 +32,7 @@ function validConfiguration(overrides: Record<string, unknown> = {}): Record<str
     AWS_SECRET_ACCESS_KEY: 'test',
     SQS_QUEUE_URL: 'http://localhost:4566/000000000000/wager-transactions.fifo',
     SQS_DLQ_URL: 'http://localhost:4566/000000000000/wager-transactions-dlq.fifo',
+    SQS_EVENTS_QUEUE_URL: 'http://localhost:4566/000000000000/wager-events.fifo',
     ...overrides,
   };
 }

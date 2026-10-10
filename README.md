@@ -544,6 +544,7 @@ Filas:
 ```
 wager-transactions.fifo
 wager-transactions-dlq.fifo
+wager-events.fifo
 ```
 
 Mensagem:
@@ -576,6 +577,8 @@ O consumidor deve:
 - respeitar um limite de tentativas antes da DLQ;
 - em `SIGTERM`, concluir mensagens em andamento ou devolver a visibilidade;
 - suportar redelivery sem duplicar efeitos.
+
+O publisher da outbox envia envelopes confirmados para `wager-events.fifo`, agrupados por wallet. Configure a URL em `SQS_EVENTS_QUEUE_URL`; `scripts/init-localstack.sh` provisiona a fila local.
 
 ---
 

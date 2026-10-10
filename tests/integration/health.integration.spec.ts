@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '@/app.module';
 
 interface ReadinessResponse {
   status: string;
@@ -15,6 +14,8 @@ describe('Health HTTP integration (PostgreSQL and LocalStack)', () => {
   let app: INestApplication | undefined;
 
   beforeAll(async () => {
+    process.env.SQS_EVENTS_QUEUE_URL ??= 'http://localhost:4566/000000000000/wager-events.fifo';
+    const { AppModule } = await import('@/app.module');
     app = await NestFactory.create(AppModule, { logger: false });
     await app.listen(0, '127.0.0.1');
   });

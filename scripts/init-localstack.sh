@@ -29,5 +29,9 @@ awslocal sqs create-queue \
   --queue-name wager-transactions.fifo \
   --attributes file:///tmp/queue-attributes.json
 
+awslocal sqs create-queue \
+  --queue-name wager-events.fifo \
+  --attributes FifoQueue=true,ContentBasedDeduplication=false
+
 echo "==> SQS FIFO queues created successfully:"
 awslocal sqs list-queues

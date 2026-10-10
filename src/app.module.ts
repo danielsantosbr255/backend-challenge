@@ -7,6 +7,7 @@ import { PersistenceModule } from './infrastructure/persistence/persistence.modu
 import { WalletModule } from './modules/wallet/wallet.module';
 import { WagerModule } from './modules/wager/wager.module';
 import { GlobalHttpExceptionFilter } from './infrastructure/http/global-http-exception.filter';
+import { WagerWorkersModule } from './modules/wager/wager-workers.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { GlobalHttpExceptionFilter } from './infrastructure/http/global-http-exc
     HealthModule,
     WalletModule,
     WagerModule,
+    WagerWorkersModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: GlobalHttpExceptionFilter }],
 })

@@ -20,6 +20,7 @@ const baseEnvSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   SQS_QUEUE_URL: z.url(),
   SQS_DLQ_URL: z.url(),
+  SQS_EVENTS_QUEUE_URL: z.url(),
 });
 
 export const databaseEnvSchema = baseEnvSchema.pick({

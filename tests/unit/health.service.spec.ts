@@ -68,6 +68,7 @@ async function createHealthService(
         useValue: new ConfigService({
           SQS_QUEUE_URL: 'http://localhost:4566/000000000000/wagers',
           SQS_DLQ_URL: 'http://localhost:4566/000000000000/wagers-dlq',
+          SQS_EVENTS_QUEUE_URL: 'http://localhost:4566/000000000000/wager-events.fifo',
         }),
       },
     ],

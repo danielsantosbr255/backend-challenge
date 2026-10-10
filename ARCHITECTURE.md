@@ -18,6 +18,20 @@ Authentication remains outside this stage and is optional in the challenge. If i
 - `LOSS` and insufficient-funds rejections store the balance observed during processing and create no ledger entry. `version` only advances when a balance movement occurs. WIN references, when supplied, must identify a processed BET for the same provider, player, wallet, round and currency.
 - The HTTP endpoint is introduced in this step to exercise the shared use case. Its complete provider-facing status contract remains part of Stage 6.
 
+## SQS inbox processing (Stage 5)
+
+- `WagerSqsConsumer` validates the queue envelope before constructing domain `Money`, then calls the same `ProcessWagerUseCase` used by HTTP.
+- The inbox reservation uses `(consumer_name, message_id)` and is inserted on the transaction-scoped EntityManager before wager reservation. The inbox row, wallet mutation, transaction, ledger, and outbox therefore commit or roll back together. A duplicate delivery is acknowledged only after the first delivery has committed; the transaction commit itself marks the inbox row processed.
+- Terminal wager rejections and duplicate deliveries are acknowledged. Invalid envelopes and inbox ID/hash conflicts are copied to the FIFO DLQ before the original is deleted. Other failures keep the message available with exponential visibility delay; the queue redrive policy sends repeated failures to the DLQ after three receives. Missing wager references currently follow this retry/DLQ path; persistent pending-reference recovery remains unimplemented.
+- On shutdown, the poller stops receiving, finishes the current message, and returns unstarted messages from the received batch to the queue by setting their visibility to zero.
+
+## Outbox publishing and HTTP result contract (Stage 6)
+
+- `OutboxPublisher` claims due events in short PostgreSQL transactions using `FOR UPDATE SKIP LOCKED` and a 60-second lease. It publishes outside the claim transaction, then marks success or schedules exponential retry. A crash after publish can cause redelivery; `eventId` remains the SQS FIFO deduplication ID and is the consumer idempotency key.
+- Events publish to `wager-events.fifo`, grouped by `aggregateId`. The queue URL is validated from configuration and the LocalStack initialization script provisions the queue.
+- The synchronous wager endpoint returns `200` for processed/replayed processed transactions and `422` for persisted business rejections. Validation is `400`, idempotency/external transaction conflicts are `409`, and recognized temporary PostgreSQL connection/deadlock/lock-timeout errors are `503`. Internal errors stay sanitized as `500`.
+- HTTP and SQS workers are composed by `AppModule` through `WagerWorkersModule`; feature tests can import `WagerModule` without starting background polling.
+
 ## Module layout
 
 - Feature slices keep the NestJS entry points and related files together: `*.module.ts`, `*.controller.ts`, concrete `*.repository.ts`, `*.interface.ts`, `*.errors.ts`, `*.mappers.ts`, `dtos/`, and `entities/`.
