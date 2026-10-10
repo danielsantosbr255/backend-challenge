@@ -14,7 +14,9 @@ import { WalletLedgerEntryEntity } from './entities/wallet-ledger-entry.entity';
 import { WalletEntity } from './entities/wallet.entity';
 import { WagerTransactionEntity } from '@/modules/wager/entities/wager-transaction.entity';
 import { toLedgerEntryEntityData, toWalletDomain, toWalletEntityData } from './wallet.mappers';
-import { toWagerEntityData } from '@/modules/wager/wager.mappers';
+import { toOutboxEntityData, toWagerEntityData } from '@/modules/wager/wager.mappers';
+import { createWagerEvents } from '@/modules/wager/wager.events';
+import { OutboxMessageEntity } from '@/modules/wager/entities/outbox-message.entity';
 import { Money } from './domain/money';
 
 @Injectable()
@@ -38,6 +40,9 @@ export class WalletRepository implements WalletRepositoryInterface {
           );
           em.persist(transactionEntity);
           em.persist(ledgerEntryEntity);
+          for (const event of createWagerEvents(opening.transaction, wallet, opening.ledgerEntry, wallet.balance.toJSON())) {
+            em.persist(em.create(OutboxMessageEntity, toOutboxEntityData(event)));
+          }
         }
 
         await em.flush();

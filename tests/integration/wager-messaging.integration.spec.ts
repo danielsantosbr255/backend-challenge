@@ -168,7 +168,7 @@ describe('SQS consumer and outbox integration (LocalStack)', () => {
        FROM wallets w WHERE w.id = ?`,
       [wagerMessageId, walletId, walletId],
     );
-    expect(persisted[0]).toEqual({ balance: '90.00', inbox_count: 1, outbox_count: 1 });
+    expect(persisted[0]).toEqual({ balance: '90.00', inbox_count: 1, outbox_count: 2 });
 
     const event = await receiveExpectedEvent(externalTransactionId);
     expect(event).toMatchObject({

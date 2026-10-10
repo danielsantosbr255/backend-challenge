@@ -43,6 +43,54 @@ describe('Wagering HTTP processing', () => {
     await testApp?.close();
   }, 30_000);
 
+  it('records both opening events in the same commit as a positive initial balance', async () => {
+    const walletId = await createWallet('100.00');
+    const rows: Array<{ event_type: string; transaction_id: string; balance: string }> = await testOrm.em.getConnection().execute(
+      `SELECT event_type, payload->'data'->>'transactionId' AS transaction_id,
+              COALESCE(payload->'data'->'balance'->>'amount', payload->'data'->'balanceAfter'->>'amount') AS balance
+       FROM outbox_messages WHERE aggregate_id = ? ORDER BY event_type`, [walletId],
+    );
+    expect(rows.map((row) => row.event_type)).toEqual(['WagerTransactionProcessed', 'WalletBalanceChanged']);
+    expect(new Set(rows.map((row) => row.transaction_id)).size).toBe(1);
+    expect(rows.every((row) => row.balance === '100.00')).toBe(true);
+  });
+
+  it('rolls back wallet, opening, ledger and events when opening outbox persistence fails', async () => {
+    const playerId = crypto.randomUUID();
+    const triggerName = `reject_opening_outbox_${integrationRunId.replaceAll('-', '')}`;
+    const connection = testOrm.em.getConnection();
+    const countArtifacts = () => connection.execute<Array<{ ledger: number; outbox: number }>>(
+      'SELECT (SELECT count(*)::int FROM wallet_ledger_entries) AS ledger, (SELECT count(*)::int FROM outbox_messages) AS outbox',
+    );
+    const before = await countArtifacts();
+    await connection.execute(`CREATE FUNCTION ${triggerName}() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.payload->'data'->>'providerId' = 'internal'
+          AND NEW.payload->'data'->'balance'->>'amount' = '123.45' THEN
+          RAISE EXCEPTION 'forced opening outbox failure' USING ERRCODE = '42501';
+        END IF;
+        RETURN NEW;
+      END; $$ LANGUAGE plpgsql`);
+    await connection.execute(`CREATE TRIGGER ${triggerName} BEFORE INSERT ON outbox_messages
+      FOR EACH ROW EXECUTE FUNCTION ${triggerName}()`);
+    try {
+      const response = await fetch(`${testBaseUrl}/wallets`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId, initialBalance: { amount: '123.45', currency: 'BRL' } }),
+      });
+      expect(response.status).toBe(500);
+      const rows = await connection.execute<Array<{ wallets: number; wagers: number }>>(
+        `SELECT (SELECT count(*)::int FROM wallets WHERE player_id = ?) AS wallets,
+                (SELECT count(*)::int FROM wager_transactions WHERE player_id = ?) AS wagers`, [playerId, playerId],
+      );
+      expect(rows[0]).toEqual({ wallets: 0, wagers: 0 });
+      expect(await countArtifacts()).toEqual(before);
+    } finally {
+      await connection.execute(`DROP TRIGGER ${triggerName} ON outbox_messages`);
+      await connection.execute(`DROP FUNCTION ${triggerName}()`);
+    }
+  });
+
   it('applies one debit for 50 parallel deliveries of the same wager and replays the original result', async () => {
     const walletId = await createWallet('100.00');
     const request = wagerRequest(walletId, 'parallel-identical', '80.00');
@@ -53,7 +101,7 @@ describe('Wagering HTTP processing', () => {
     expect(bodies.filter((body) => body.idempotentReplay)).toHaveLength(49);
     expect(new Set(bodies.map((body) => body.transactionId)).size).toBe(1);
     expect(new Set(bodies.map((body) => body.balance.amount))).toEqual(new Set(['20.00']));
-    expect(await financialCounts(walletId)).toEqual({ transactions: 2, ledger: 2, outbox: 2 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 2, ledger: 2, outbox: 4 });
     expect(await readBalance(walletId)).toBe('20.00');
   }, 30_000);
 
@@ -70,7 +118,7 @@ describe('Wagering HTTP processing', () => {
     expect(bodies.map((body) => body.status).sort()).toEqual(['PROCESSED', 'REJECTED']);
     expect(bodies.find((body) => body.status === 'REJECTED')?.failureCode).toBe('INSUFFICIENT_FUNDS');
     expect(await readBalance(walletId)).toBe('20.00');
-    expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 2, outbox: 3 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 2, outbox: 5 });
   }, 30_000);
 
   it('returns 409 when the same idempotency key is reused with a different payload', async () => {
@@ -95,7 +143,7 @@ describe('Wagering HTTP processing', () => {
     expect(winBody.balance.amount).toBe('15.00');
     expect(lossBody.balance.amount).toBe('15.00');
     expect(await readBalance(walletId)).toBe('15.00');
-    expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 2, outbox: 3 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 2, outbox: 5 });
   });
 
   it('queries wallet, transaction and stable ledger pages and reconciles without changing money', async () => {
@@ -188,7 +236,7 @@ describe('Wagering HTTP processing', () => {
     expect(duplicateRefund.status).toBe(422);
     expect(duplicateBody.failureCode).toBe('WAGER_ALREADY_REVERSED');
     expect(await readBalance(walletId)).toBe('100.00');
-    expect(await financialCounts(walletId)).toEqual({ transactions: 4, ledger: 3, outbox: 5 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 4, ledger: 3, outbox: 7 });
   });
 
   it('rolls back a credit with an equal debit once and rejects duplicate reversals', async () => {
@@ -204,7 +252,7 @@ describe('Wagering HTTP processing', () => {
     expect(duplicate.status).toBe(422);
     expect(duplicateBody.failureCode).toBe('WAGER_ALREADY_REVERSED');
     expect(await readBalance(walletId)).toBe('10.00');
-    expect(await financialCounts(walletId)).toEqual({ transactions: 4, ledger: 3, outbox: 5 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 4, ledger: 3, outbox: 7 });
   });
 
   it('rejects a rollback that would overdraw with its distinct failure code', async () => {
@@ -219,7 +267,7 @@ describe('Wagering HTTP processing', () => {
     expect(response.status).toBe(422);
     expect(body.failureCode).toBe('REVERSAL_INSUFFICIENT_FUNDS');
     expect(await readBalance(walletId)).toBe('0.00');
-    expect(await financialCounts(walletId)).toEqual({ transactions: 4, ledger: 3, outbox: 5 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 4, ledger: 3, outbox: 7 });
   });
 
   it('accepts a reversal before its reference and processes it after the reference arrives', async () => {
@@ -261,7 +309,7 @@ describe('Wagering HTTP processing', () => {
       failure_code: null,
     });
     expect(await readBalance(walletId)).toBe('100.00');
-    expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 3, outbox: 5 });
+    expect(await financialCounts(walletId)).toEqual({ transactions: 3, ledger: 3, outbox: 7 });
   });
 
   it('rejects an unresolved reference after five durable attempts and records its event', async () => {
@@ -393,10 +441,11 @@ describe('Wagering HTTP processing', () => {
       wager_status: 'FAILED',
       failure_code: 'PERMANENT_INFRASTRUCTURE_FAILURE',
       ledger: 1,
-      outbox: 0,
+      outbox: 2,
     });
     expect(await readBalance(walletId)).toBe('100.00');
   });
+
 });
 
 interface WagerResponse {

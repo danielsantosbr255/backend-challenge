@@ -146,14 +146,15 @@ describe('PostgreSQL financial schema migrations', () => {
     expect(body['balance']).toEqual({ amount: '0.00', currency: 'USD' });
 
     const counts = await testOrm.em.getConnection().execute<
-      { transactions: number; ledger_entries: number }[]
+      { transactions: number; ledger_entries: number; outbox: number }[]
     >(
       `SELECT
          (SELECT count(*)::int FROM wager_transactions WHERE wallet_id = ?) AS transactions,
-         (SELECT count(*)::int FROM wallet_ledger_entries WHERE wallet_id = ?) AS ledger_entries`,
-      [body['id'], body['id']],
+         (SELECT count(*)::int FROM wallet_ledger_entries WHERE wallet_id = ?) AS ledger_entries,
+         (SELECT count(*)::int FROM outbox_messages WHERE aggregate_id = ?) AS outbox`,
+      [body['id'], body['id'], body['id']],
     );
-    expect(counts[0]).toEqual({ transactions: 0, ledger_entries: 0 });
+    expect(counts[0]).toEqual({ transactions: 0, ledger_entries: 0, outbox: 0 });
   });
 
   it('returns 409 for a duplicate player and currency wallet', async () => {
